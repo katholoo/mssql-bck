@@ -1,0 +1,8 @@
+[Unit]
+Description=Применение HTTPS-сертификата MSSQL Backup (ожидание запроса из веб-интерфейса)
+
+[Path]
+PathChanged=/var/lib/mssql-backup/tls/request.json
+
+[Install]
+WantedBy=multi-user.target

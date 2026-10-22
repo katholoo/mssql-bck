@@ -1,0 +1,34 @@
+[Unit]
+Description=MSSQL Backup web API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mssql-backup
+Group=mssql-backup
+WorkingDirectory=/opt/mssql-backup/app
+EnvironmentFile=/etc/mssql-backup/mssql-backup.env
+# /var/lib/mssql-backup: настройки, история, ключ сессий
+StateDirectory=mssql-backup
+StateDirectoryMode=0700
+# Один worker: сессии подписаны общим ключом, а счётчик неудачных входов и
+# «одна операция за раз» живут в памяти процесса. Бэкапы идут в фоновых потоках,
+# поэтому длинный timeout не нужен.
+ExecStart=/opt/mssql-backup/venv/bin/gunicorn -b 127.0.0.1:8000 -w 1 -k gthread --threads 8 --timeout 120 app:app
+Restart=on-failure
+RestartSec=3
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

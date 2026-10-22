@@ -1,0 +1,1346 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSSQL Backup</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --fg:#1c1f23; --mut:#6b7280; --line:#e5e7eb; --acc:#2563eb; --ok:#16a34a; --err:#dc2626; --warn:#d97706; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#121417; --card:#1b1e23; --fg:#e8eaed; --mut:#9aa0a6; --line:#2b3037; --acc:#60a5fa; } }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  header { background:var(--card); border-bottom:1px solid var(--line); }
+  .bar { max-width:980px; margin:0 auto; padding:10px 16px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .brand { font-weight:600; }
+  nav { display:flex; gap:4px; flex:1; }
+  nav button { border:none; background:none; padding:6px 12px; border-radius:8px; color:var(--mut); cursor:pointer; font:inherit; }
+  nav button.on { background:var(--bg); color:var(--fg); font-weight:500; }
+  .who { color:var(--mut); font-size:14px; display:flex; gap:10px; align-items:center; }
+  main { max-width:980px; margin:0 auto; padding:20px 16px 48px; }
+  h2 { font-size:17px; margin:0 0 12px; }
+  h3 { font-size:14px; margin:18px 0 8px; color:var(--mut); font-weight:600; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input, select, button { font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  input[type=checkbox] { width:auto; padding:0; }
+  input, select { width:100%; }
+  select.inline { width:auto; flex:1; min-width:180px; }
+  button { cursor:pointer; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  button.danger { background:var(--err); color:#fff; border-color:var(--err); }
+  button.link { border:none; background:none; color:var(--acc); padding:0 4px; }
+  button:disabled { opacity:.55; cursor:wait; }
+  label { display:block; font-size:13px; color:var(--mut); margin-bottom:3px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+  .grid .wide { grid-column:1 / -1; }
+  .chk { display:flex; align-items:center; gap:8px; color:var(--fg); font-size:14px; margin:0; }
+  .hint { color:var(--mut); font-size:13px; margin-top:4px; }
+  .res { margin-top:10px; min-height:1.4em; font-size:14px; word-break:break-word; }
+  .ok { color:var(--ok); } .err { color:var(--err); } .warn { color:var(--warn); }
+  .tbl { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:top; }
+  th { color:var(--mut); font-weight:500; white-space:nowrap; }
+  td.nw { white-space:nowrap; }
+  code { font:12px ui-monospace,monospace; word-break:break-all; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; border:1px solid var(--line); }
+  .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.error { color:var(--err); border-color:var(--err); }
+  .badge.running { color:var(--acc); border-color:var(--acc); } .badge.interrupted { color:var(--warn); border-color:var(--warn); }
+  .role { font-size:12px; padding:1px 8px; border-radius:10px; background:var(--bg); }
+  .empty { color:var(--mut); padding:8px 0; }
+  .count { display:inline-block; min-width:18px; padding:0 6px; margin-left:4px; border-radius:9px; background:var(--err); color:#fff; font-size:12px; text-align:center; }
+  .sub { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+  .sub button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .checks { max-height:210px; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:8px 10px; display:grid; gap:6px; }
+  .count.q { background:var(--acc); }
+  .banner.ok { border-color:var(--ok); color:var(--ok); } .banner.err { border-color:var(--err); color:var(--err); }
+  .badge.queued, .badge.cancelled { color:var(--mut); }
+  .chip { display:inline-block; padding:0 8px; margin:1px 2px 1px 0; border-radius:10px; background:var(--bg); font-size:12px; }
+  .banner { border:1px solid var(--acc); color:var(--acc); border-radius:10px; padding:10px 14px; margin-bottom:16px; background:var(--card); }
+  #login { max-width:360px; margin:60px auto 0; }
+  #login input { margin-bottom:10px; }
+  dialog#udlg, dialog#gdlg { max-width:860px; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg); max-width:520px; width:calc(100% - 32px); padding:20px; }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0 0 14px; font-size:14px; }
+  dt { color:var(--mut); } dd { margin:0; }
+  .filters { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; align-items:end; margin-bottom:12px; }
+  .filters .wide2 { grid-column:span 2; }
+  .filters .fbtn { display:flex; gap:8px; align-items:center; }
+  .pager { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .pager button { min-width:34px; padding:5px 9px; }
+  .pager button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .pager .gap { color:var(--mut); padding:0 4px; }
+  .pager-top { margin-bottom:10px; }
+  .ver { color:var(--mut); font-size:12px; font-weight:400; }
+  .ver.foot { text-align:center; margin-top:24px; }
+  textarea { width:100%; font:inherit; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); resize:vertical; }
+  textarea.mono { font:12px/1.4 ui-monospace,monospace; }
+  .certbox { border:1px solid var(--line); border-radius:8px; padding:10px 14px; margin-bottom:10px; font-size:14px; }
+  .certbox dl { margin:0; }
+  .cols3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:12px; }
+  .cols3 .checks { max-height:260px; }
+  @media (max-width:900px) { .cols3 { grid-template-columns:1fr; } }
+  /* Широкие экраны (Full HD и больше): шире рабочая область, «Создать копию» и «Восстановить копию» рядом */
+  @media (min-width:1280px) {
+    .bar, main { max-width:1680px; padding-left:32px; padding-right:32px; }
+    #tab-backups { display:grid; grid-template-columns:minmax(420px,5fr) minmax(560px,7fr); gap:0 20px; align-items:start; }
+    #tab-backups > #job, #tab-backups > #blist-card { grid-column:1 / -1; }
+    #tab-backups > #make[hidden] ~ #rs { grid-column:1 / -1; }
+    #tab-backups #rs .grid { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
+    dialog#udlg, dialog#gdlg { max-width:1100px; }
+    .checks { max-height:300px; }
+    td, th { font-size:14.5px; }
+  }
+  @media (min-width:1900px) { body { font-size:16px; } }
+</style>
+</head>
+<body>
+
+<header id="top" hidden>
+  <div class="bar">
+    <span class="brand">MSSQL Backup <span class="ver" id="ver-top"></span></span>
+    <nav>
+      <button data-tab="backups">Копии</button>
+      <button data-tab="queue">Очереди<span class="count q" id="queue-count" hidden></span></button>
+      <button data-tab="requests" id="nav-requests" hidden>Запросы<span class="count" id="req-count" hidden></span></button>
+      <button data-tab="history" id="nav-history" hidden>История</button>
+      <button data-tab="settings" id="nav-settings" hidden>Настройки</button>
+    </nav>
+    <div class="who"><span id="who"></span><span class="role" id="role"></span><button id="logout">Выйти</button></div>
+  </div>
+</header>
+
+<main>
+  <!-- Вход -->
+  <section id="login" class="card" hidden>
+    <h2>Вход</h2>
+    <form id="login-form">
+      <label for="lu">Логин</label>
+      <input id="lu" autocomplete="username" required>
+      <label for="lp">Пароль</label>
+      <input id="lp" type="password" autocomplete="current-password" required>
+      <button class="primary" style="width:100%">Войти</button>
+      <div id="login-res" class="res err"></div>
+    </form>
+  </section>
+
+  <!-- Копии -->
+  <section id="tab-backups" hidden>
+    <div id="job" class="banner" hidden></div>
+
+    <div class="card" id="make" hidden>
+      <h2>Создать копию</h2>
+      <div class="row">
+        <select id="db" class="inline"><option>Загрузка…</option></select>
+        <button id="go" class="primary">Сделать копию</button>
+      </div>
+      <div class="hint" id="make-info" hidden>Куда: <code id="dest">—</code> (меняется в «Настройки»). Копия создаётся как COPY_ONLY — цепочку разностных копий не нарушает.</div>
+      <div id="make-res" class="res"></div>
+    </div>
+
+    <div class="card" id="rs">
+      <h2>Восстановить копию</h2>
+      <div id="rs-denied" class="hint" hidden></div>
+      <div id="rs-form">
+      <div class="hint" id="rs-access" style="margin-bottom:10px"></div>
+      <div class="grid">
+        <div>
+          <label>База</label>
+          <select id="rs-src"></select>
+          <label style="margin-top:10px">Резервная копия</label>
+          <select id="rs-copy"></select>
+          <div class="hint" id="rs-src-hint"></div>
+        </div>
+        <div>
+          <label>Восстановить в</label>
+          <select id="rs-target"></select>
+        </div>
+        <div id="rs-newbox" hidden><label>Имя новой базы</label><input id="rs-newname" autocomplete="off"></div>
+        <div id="rs-confirm-box" hidden>
+          <label>Для подтверждения введите имя базы: <b id="rs-confirm-name"></b></label>
+          <input id="rs-confirm" autocomplete="off">
+        </div>
+      </div>
+      <label class="chk" id="rs-kick-box" style="margin-top:12px"><input type="checkbox" id="rs-kick"> Отключить активные подключения к базе (ROLLBACK IMMEDIATE)</label>
+      <div class="hint" id="rs-note"></div>
+      <div class="row" style="margin-top:12px"><button id="rs-go" class="primary">Добавить в очередь</button></div>
+      <div id="rs-res" class="res"></div>
+      </div>
+    </div>
+
+    <div class="card" id="blist-card" hidden>
+      <h2>Сделанные копии <button class="link" id="reload">обновить</button></h2>
+      <div class="hint" style="margin-bottom:8px">Видно только администратору. «Восстановить» подставляет выбранную копию в форму выше.</div>
+      <div class="row pager-top">
+        <label for="b-size" style="margin:0">Записей на странице</label>
+        <select id="b-size" style="width:auto"><option>10</option><option selected>50</option><option>100</option><option>500</option></select>
+        <span class="hint" id="b-range" style="margin:0 0 0 8px"></span>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>База</th><th>Дата</th><th>Размер</th><th>Путь</th><th></th></tr></thead>
+          <tbody id="blist"></tbody>
+        </table>
+      </div>
+      <div class="pager" id="b-pager"></div>
+      <div id="bempty" class="empty" hidden>Копий в журнале SQL Server нет</div>
+      <div id="blist-err" class="res err"></div>
+    </div>
+  </section>
+
+  <!-- Очереди -->
+  <section id="tab-queue" hidden>
+    <div class="card">
+      <h2>Очередь задач <button class="link" id="q-reload">обновить</button></h2>
+      <div class="hint" style="margin-bottom:10px">Копии и восстановления всех пользователей выполняются по очереди, по одной. Задачу можно снять, пока она не началась: это может сделать её автор или администратор.</div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>№</th><th>Добавлена</th><th>Пользователь</th><th>Операция</th><th>Объект</th><th>Статус</th><th></th></tr></thead>
+          <tbody id="qlist"></tbody>
+        </table>
+      </div>
+      <div id="qempty" class="empty" hidden>Очередь пуста</div>
+      <div id="q-res" class="res"></div>
+    </div>
+    <div class="card">
+      <h2>Недавно завершённые</h2>
+      <div class="hint" id="qd-hint" style="margin-bottom:10px"></div>
+      <div class="filters" id="qd-filters">
+        <div><label>Завершена: с</label><input type="date" id="qd-from"></div>
+        <div><label>по</label><input type="date" id="qd-to"></div>
+        <div id="qd-user-box"><label>Пользователь</label><input id="qd-user" placeholder="логин"></div>
+        <div><label>Операция</label>
+          <select id="qd-action"><option value="">Все</option><option value="backup">Копия</option><option value="restore">Восстановление</option></select></div>
+        <div><label>Объект</label><input id="qd-target" placeholder="база"></div>
+        <div><label>Статус</label>
+          <select id="qd-status"><option value="">Любой</option><option value="ok">Успешно</option><option value="error">Ошибка</option>
+            <option value="interrupted">Прервано</option><option value="cancelled">Отменено</option></select></div>
+        <div class="wide2"><label>Результат содержит</label><input id="qd-text" placeholder="текст"></div>
+        <div class="fbtn"><button id="qd-go">Показать</button> <button class="link" id="qd-reset">сбросить</button></div>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Завершена</th><th class="qd-usercol">Пользователь</th><th>Операция</th><th>Объект</th><th>Статус</th><th>Результат</th></tr></thead>
+          <tbody id="qdone"></tbody>
+        </table>
+      </div>
+      <div id="qdempty" class="empty" hidden>Ничего не найдено</div>
+      <div class="row" style="margin-top:8px"><button id="qd-more" hidden>Показать ещё</button></div>
+    </div>
+  </section>
+
+  <!-- Запросы на создание баз -->
+  <section id="tab-requests" hidden>
+    <div class="card">
+      <h2>Запросы на создание новой базы</h2>
+      <div class="hint" id="req-hint" style="margin-bottom:10px"></div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>№</th><th>Дата</th><th>Автор</th><th>Копия → база</th><th>Статус</th><th></th></tr></thead>
+          <tbody id="rqlist"></tbody>
+        </table>
+      </div>
+      <div id="rqempty" class="empty" hidden>Запросов нет</div>
+      <div id="rq-res" class="res"></div>
+    </div>
+  </section>
+
+  <!-- История -->
+  <section id="tab-history" hidden>
+    <div class="card">
+      <h2>История действий</h2>
+      <div class="row" style="margin-bottom:12px">
+        <select id="h-action" class="inline">
+          <option value="">Все действия</option>
+          <option value="backup">Копии</option><option value="restore">Восстановление</option>
+          <option value="login">Вход</option><option value="login_failed">Неудачный вход</option><option value="logout">Выход</option>
+          <option value="request_create">Запрос на создание базы</option><option value="request_approve">Запрос подтверждён</option>
+          <option value="request_reject">Запрос отклонён</option><option value="request_cancel">Запрос отменён</option>
+          <option value="queue_cancel">Снятие с очереди</option><option value="user_added">Новый пользователь</option><option value="settings_access">Настройки доступа</option>
+          <option value="settings_ldap">Настройки LDAP</option><option value="settings_storage">Настройки хранилища</option>
+          <option value="settings_test">Проверка настроек</option>
+        </select>
+        <select id="h-status" class="inline">
+          <option value="">Любой статус</option><option value="ok">Успешно</option><option value="error">Ошибка</option>
+          <option value="queued">В очереди</option><option value="running">Выполняется</option>
+          <option value="interrupted">Прервано</option><option value="cancelled">Отменено</option>
+        </select>
+        <input id="h-user" class="inline" placeholder="Пользователь" style="width:auto">
+        <button id="h-go">Показать</button>
+      </div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Время</th><th>Пользователь</th><th>Действие</th><th>Объект</th><th>Статус</th><th>Подробности</th></tr></thead>
+          <tbody id="hlist"></tbody>
+        </table>
+      </div>
+      <div id="hempty" class="empty" hidden>Записей нет</div>
+      <button id="hmore" style="margin-top:12px" hidden>Показать ещё</button>
+    </div>
+  </section>
+
+  <!-- Настройки -->
+  <section id="tab-settings" hidden>
+    <div class="sub">
+      <button data-sub="storage">Хранилище</button>
+      <button data-sub="notify">Уведомления</button>
+      <button data-sub="cert">Сертификат</button>
+      <button data-sub="ldap">LDAP</button>
+      <button data-sub="users">Пользователи</button>
+      <button data-sub="groups">Группы</button>
+      <button data-sub="protected">Защита баз</button>
+    </div>
+
+    <div class="card" data-sub="protected" hidden>
+      <h2>Защищённые базы</h2>
+      <div class="hint" style="margin-bottom:10px">Перезапись этих баз выполняется только после подтверждения администратором (пользователем с полным доступом): пользователь отправляет запрос, и восстановление начнётся, когда администратор его подтвердит. Подтверждающие из внутренних групп такие запросы подтвердить не могут. Администраторы восстанавливают защищённые базы сразу. Защита касается тех, у кого эта база есть в списке разрешённых (лично или через группу); остальные её в списке не видят.</div>
+      <div class="checks" id="p-dbs"></div>
+      <div class="row" style="margin-top:12px"><button class="primary" id="p-save">Сохранить</button></div>
+      <div id="p-res" class="res"></div>
+    </div>
+
+    <div class="card" data-sub="users" hidden>
+      <h2>Пользователи</h2>
+      <div class="hint" style="margin-bottom:10px">Список пополняется автоматически при первом входе пользователя из Active Directory. Пользователь с ролью «Копии и восстановление» может восстанавливать только в отмеченные базы (лично или через группы). Пока ничего не отмечено, список пуст, но создать новую базу можно — через запрос на подтверждение. Для пользователей с полным доступом ограничений нет.</div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Логин</th><th>Имя</th><th>Роль</th><th>Последний вход</th><th>Группы</th><th>Создание копий</th><th>Источники</th><th>Восстановление</th><th></th></tr></thead>
+          <tbody id="ulist"></tbody>
+        </table>
+      </div>
+      <div id="uempty" class="empty" hidden>Пока никто не входил через LDAP</div>
+      <div id="u-res" class="res"></div>
+    </div>
+
+    <div class="card" data-sub="groups" hidden>
+      <h2>Внутренние группы <button class="primary" id="g-new" style="float:right">Создать группу</button></h2>
+      <div class="hint" style="margin-bottom:10px">Группы существуют только в этом приложении и не связаны с группами LDAP. Группа может разрешать восстановление в выбранные базы и/или подтверждать запросы на создание новых баз. Пользователи с полным доступом тоже могут подтверждать запросы. Участники выбираются из списка пользователей, поэтому человек должен хотя бы раз войти.</div>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>Группа</th><th>Подтверждает запросы</th><th>Создание копий</th><th>Источники</th><th>Восстановление</th><th>Участники</th><th></th></tr></thead>
+          <tbody id="glist"></tbody>
+        </table>
+      </div>
+      <div id="gempty" class="empty" hidden>Групп пока нет</div>
+      <div id="g-res" class="res"></div>
+    </div>
+
+    <div class="card" data-sub="storage">
+      <h2>Хранилище копий по умолчанию</h2>
+      <div class="grid">
+        <div class="wide">
+          <label>Тип хранилища</label>
+          <select data-f="storage" data-k="type" id="st-type">
+            <option value="local">Папка на сервере SQL Server</option>
+            <option value="smb">SMB-ресурс (UNC-путь)</option>
+            <option value="s3">S3 (SQL Server 2022+)</option>
+          </select>
+        </div>
+
+        <div class="wide" data-t="local">
+          <label>Папка (как её видит SQL Server)</label>
+          <input data-f="storage" data-k="local_path" placeholder="/var/opt/mssql/backup  или  D:\Backups">
+          <div class="hint">Может быть и смонтированной на самом сервере SQL шарой. Службе SQL Server нужны права на запись.</div>
+        </div>
+
+        <div class="wide" data-t="smb">
+          <label>UNC-путь</label>
+          <input data-f="storage" data-k="smb_path" placeholder="\\fileserver\backups\sql">
+          <div class="hint">Пишет сам SQL Server от имени учётной записи своей службы (SQL Server на Windows) — ей нужны права на запись в шару. Логин и пароль SMB здесь не задаются.</div>
+        </div>
+
+        <div data-t="s3"><label>Endpoint</label><input data-f="storage" data-k="s3_endpoint" placeholder="s3.eu-central-1.amazonaws.com"></div>
+        <div data-t="s3"><label>Порт</label><input data-f="storage" data-k="s3_port" type="number" min="1" max="65535"></div>
+        <div data-t="s3"><label>Бакет</label><input data-f="storage" data-k="s3_bucket"></div>
+        <div data-t="s3"><label>Папка в бакете (необязательно)</label><input data-f="storage" data-k="s3_prefix" placeholder="sql/backups"></div>
+        <div data-t="s3"><label>Access Key</label><input data-f="storage" data-k="s3_access_key" autocomplete="off"></div>
+        <div data-t="s3"><label>Secret Key</label><input data-f="storage" data-k="s3_secret_key" data-secret type="password" autocomplete="new-password"></div>
+        <div class="wide" data-t="s3">
+          <label class="chk"><input type="checkbox" data-f="storage" data-k="s3_virtual_host"> Адрес вида бакет.endpoint (virtual-hosted style, для AWS)</label>
+          <div class="hint">Нужен HTTPS с сертификатом, которому доверяет сервер SQL. Бакет должен существовать. Файл копии не может быть больше 100 ГБ.</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button id="st-test">Проверить запись</button>
+        <button id="st-save" class="primary">Сохранить</button>
+      </div>
+      <div class="hint">Проверка делает небольшую копию системной базы model в выбранное место (файл <code>mssql_backup_web_write_test.bak</code>, перезаписывается).</div>
+      <div id="st-res" class="res"></div>
+    </div>
+
+    <div class="card" data-sub="cert" hidden>
+      <h2>HTTPS-сертификат</h2>
+      <div class="hint" id="cert-conn" style="margin-bottom:10px"></div>
+      <div id="cert-installed" class="certbox" hidden></div>
+      <div id="cert-apply" class="res"></div>
+
+      <h3>1. Запрос сертификата (CSR) для центра сертификации</h3>
+      <div class="grid">
+        <div><label>Имя сервера (CN)</label><input id="c-cn" placeholder="backup.corp.local" autocomplete="off"></div>
+        <div class="wide2"><label>Доп. имена и IP (через запятую)</label><input id="c-sans" placeholder="backup, 10.0.0.5" autocomplete="off"></div>
+        <div><label>Организация</label><input id="c-org" autocomplete="off"></div>
+        <div><label>Подразделение</label><input id="c-unit" autocomplete="off"></div>
+        <div><label>Страна (2 буквы)</label><input id="c-country" maxlength="2" placeholder="RU" autocomplete="off"></div>
+        <div><label>Область</label><input id="c-state" autocomplete="off"></div>
+        <div><label>Город</label><input id="c-city" autocomplete="off"></div>
+        <div><label>Ключ RSA</label><select id="c-bits"><option>2048</option><option>3072</option><option>4096</option></select></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button id="c-create" class="primary">Создать запрос</button>
+        <span class="hint" id="c-create-hint"></span></div>
+      <div id="cert-pending" hidden>
+        <div class="hint" id="c-pend-info" style="margin:12px 0 6px"></div>
+        <textarea id="c-csr" readonly rows="8" class="mono"></textarea>
+        <div class="row" style="margin-top:8px">
+          <a href="api/settings/tls/csr" id="c-dl"><button type="button">Скачать .csr</button></a>
+          <button id="c-copy">Копировать</button>
+          <button id="c-cancel" class="link">Отменить запрос</button>
+        </div>
+        <div class="hint">Закрытый ключ создан и остаётся на сервере (в браузер не передаётся). Отправьте CSR в центр сертификации домена, например
+          Microsoft AD CS: веб-страница <code>/certsrv</code> → «Запрос сертификата» → «Расширенный запрос» → вставьте текст CSR, шаблон «Веб-сервер»;
+          или <code>certreq -submit -attrib "CertificateTemplate:WebServer" mssql-backup.csr</code>. Получите сертификат в формате Base64 (.cer / PEM).</div>
+      </div>
+
+      <h3>2. Установка выданного сертификата</h3>
+      <div class="grid">
+        <div class="wide"><label>Файл сертификата (.cer, .crt, .pem, .p7b) или текст PEM</label>
+          <input type="file" id="c-file" accept=".cer,.crt,.pem,.p7b,.p7c,.der">
+          <textarea id="c-pem" rows="6" class="mono" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----" style="margin-top:8px"></textarea>
+          <div class="hint">Можно загрузить цепочку (сертификат сервера + промежуточные центры) — подходящий порядок будет выбран автоматически; корневой сертификат в цепочку не включается.</div></div>
+        <div><label>Порт HTTPS</label><input id="c-port" type="number" min="1" max="65535" value="443"></div>
+        <div class="wide2"><label class="chk" style="margin-top:22px"><input type="checkbox" id="c-redir" checked> Перенаправлять HTTP на HTTPS</label></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button id="c-install" class="primary">Установить сертификат</button></div>
+      <div class="hint">После установки nginx перенастраивается и перезагружается автоматически (отдельная служба <code>mssql-backup-tls</code>); прежняя конфигурация
+        возвращается, если проверка не прошла. Страница откроется по новому адресу HTTPS.</div>
+      <div id="c-res" class="res"></div>
+    </div>
+
+    <div class="card" data-sub="notify" hidden>
+      <h2>Уведомления</h2>
+      <div class="hint" style="margin-bottom:12px">Сообщение уходит, когда задача из очереди завершилась: копия создана или восстановление выполнено (или закончилось ошибкой).</div>
+      <h3>О чём сообщать</h3>
+      <div class="row" style="gap:18px;flex-wrap:wrap">
+        <label class="chk"><input type="checkbox" data-f="notify" data-k="ev_backup_ok"> Копия создана</label>
+        <label class="chk"><input type="checkbox" data-f="notify" data-k="ev_backup_error"> Ошибка при создании копии</label>
+        <label class="chk"><input type="checkbox" data-f="notify" data-k="ev_restore_ok"> Восстановление выполнено</label>
+        <label class="chk"><input type="checkbox" data-f="notify" data-k="ev_restore_error"> Ошибка при восстановлении</label>
+      </div>
+      <h3 style="margin-top:18px">E-mail</h3>
+      <label class="chk"><input type="checkbox" data-f="notify" data-k="email_enabled"> Отправлять по e-mail</label>
+      <div class="grid">
+        <div><label>SMTP-сервер</label><input data-f="notify" data-k="smtp_host" placeholder="smtp.example.com"></div>
+        <div><label>Порт</label><input data-f="notify" data-k="smtp_port" type="number" min="1" max="65535"></div>
+        <div><label>Шифрование</label>
+          <select data-f="notify" data-k="smtp_security">
+            <option value="starttls">STARTTLS (587)</option><option value="ssl">SSL/TLS (465)</option><option value="none">Без шифрования (25)</option>
+          </select></div>
+        <div><label>Пользователь (если нужен)</label><input data-f="notify" data-k="smtp_user" autocomplete="off"></div>
+        <div><label>Пароль</label><input data-f="notify" data-k="smtp_password" data-secret type="password" autocomplete="new-password"></div>
+        <div><label>От кого</label><input data-f="notify" data-k="mail_from" placeholder="backup@example.com"></div>
+        <div class="wide"><label>Кому (через запятую)</label><input data-f="notify" data-k="mail_to" placeholder="admin@example.com, dba@example.com"></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button id="nt-test-email">Отправить тестовое письмо</button></div>
+      <h3 style="margin-top:18px">Telegram</h3>
+      <label class="chk"><input type="checkbox" data-f="notify" data-k="telegram_enabled"> Отправлять в Telegram</label>
+      <div class="grid">
+        <div><label>Токен бота</label><input data-f="notify" data-k="telegram_token" data-secret type="password" autocomplete="off" placeholder="123456:ABC-DEF…"></div>
+        <div><label>Чат (id или @канал)</label><input data-f="notify" data-k="telegram_chat" placeholder="-1001234567890"></div>
+        <div><label>Прокси для Telegram</label>
+          <select data-f="notify" data-k="telegram_proxy_type" id="tg-proxy">
+            <option value="none">Без прокси</option><option value="http">HTTP / HTTPS прокси</option><option value="socks5">SOCKS5</option>
+          </select></div>
+        <div data-px><label>Адрес прокси</label><input data-f="notify" data-k="telegram_proxy_host" placeholder="proxy.example.com"></div>
+        <div data-px><label>Порт прокси</label><input data-f="notify" data-k="telegram_proxy_port" type="number" min="1" max="65535"></div>
+        <div data-px><label>Пользователь (если нужен)</label><input data-f="notify" data-k="telegram_proxy_user" autocomplete="off"></div>
+        <div data-px><label>Пароль прокси</label><input data-f="notify" data-k="telegram_proxy_password" data-secret type="password" autocomplete="new-password"></div>
+        <div class="wide hint">Прокси используется только для Telegram (системные переменные HTTP_PROXY игнорируются). Типичные порты: HTTP — 3128 или 8080, SOCKS5 — 1080. Для SOCKS5 имя api.telegram.org разрешает сам прокси.</div>
+        <div class="wide hint">Создайте бота у @BotFather и скопируйте токен. Добавьте бота в нужную группу/канал (в канале — администратором) или напишите ему сами. Id чата можно узнать, написав в чат и открыв <code>https://api.telegram.org/bot&lt;токен&gt;/getUpdates</code>. Серверу нужен выход на api.telegram.org по HTTPS.</div>
+      </div>
+      <div class="row" style="margin-top:10px"><button id="nt-test-telegram">Отправить тест в Telegram</button></div>
+      <h3 style="margin-top:18px">Bitrix24 (облако)</h3>
+      <label class="chk"><input type="checkbox" data-f="notify" data-k="bitrix_enabled"> Отправлять в Bitrix24</label>
+      <div class="grid">
+        <div><label>Входящий вебхук</label><input data-f="notify" data-k="bitrix_url" data-secret type="password" autocomplete="off" placeholder="https://портал.bitrix24.ru/rest/1/код/"></div>
+        <div><label>Кому (id пользователя или chatN)</label><input data-f="notify" data-k="bitrix_dialog" placeholder="1 или chat15"></div>
+        <div class="wide hint">В Bitrix24: Разработчикам → Другое → Входящий вебхук, право «Чат и уведомления (im)». Скопируйте URL вида <code>…/rest/1/код/</code>. Сообщение придёт в личный чат пользователя (id — число) или в групповой чат (<code>chat</code> + номер).</div>
+      </div>
+      <div class="row" style="margin-top:10px"><button id="nt-test-bitrix24">Отправить тест в Bitrix24</button></div>
+      <h3 style="margin-top:18px">Webhook (произвольный)</h3>
+      <label class="chk"><input type="checkbox" data-f="notify" data-k="webhook_enabled"> Отправлять на webhook</label>
+      <div class="grid">
+        <div class="wide"><label>URL</label><input data-f="notify" data-k="webhook_url" data-secret type="password" autocomplete="off" placeholder="https://hooks.example.com/…">
+          <div class="hint">POST с JSON <code>{"text": "…", "event", "database", "job", "user", "status"}</code> — подходит для Slack, Mattermost, Rocket.Chat и своих обработчиков. URL часто содержит токен, поэтому после сохранения не показывается.</div></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button id="nt-test-webhook">Отправить тестовое сообщение</button></div>
+      <div class="row" style="margin-top:14px"><button id="nt-save" class="primary">Сохранить</button></div>
+      <div id="nt-res" class="res"></div>
+    </div>
+
+    <div class="card" data-sub="ldap" hidden>
+      <h2>Авторизация LDAP</h2>
+      <label class="chk"><input type="checkbox" data-f="ldap" data-k="enabled"> Включить вход через LDAP / Active Directory</label>
+      <div class="hint" style="margin-bottom:12px">Локальный администратор (из файла настроек сервиса) входит всегда, даже при неверных настройках LDAP.</div>
+
+      <div class="grid">
+        <div><label>Сервер</label><input data-f="ldap" data-k="host" placeholder="dc.example.com"></div>
+        <div><label>Порт</label><input data-f="ldap" data-k="port" type="number" min="1" max="65535"></div>
+        <div><label>Шифрование</label>
+          <select data-f="ldap" data-k="security">
+            <option value="none">Без шифрования (389)</option><option value="starttls">StartTLS (389)</option><option value="ldaps">LDAPS (636)</option>
+          </select></div>
+        <div><label>Таймаут, сек</label><input data-f="ldap" data-k="timeout" type="number" min="1" max="120"></div>
+        <div class="wide"><label class="chk"><input type="checkbox" data-f="ldap" data-k="verify_cert"> Проверять сертификат сервера</label></div>
+        <div><label>Bind DN (служебная учётка)</label><input data-f="ldap" data-k="bind_dn" placeholder="CN=svc-backup,OU=Service,DC=example,DC=com"></div>
+        <div><label>Пароль служебной учётки</label><input data-f="ldap" data-k="bind_password" data-secret type="password" autocomplete="new-password">
+          <label class="chk" style="margin-top:6px"><input type="checkbox" data-f="ldap" data-k="clear_bind_password"> Удалить сохранённый пароль</label></div>
+        <div class="wide"><label>Base DN для поиска пользователей</label><input data-f="ldap" data-k="base_dn" placeholder="DC=example,DC=com"></div>
+        <div class="wide"><label>Фильтр пользователя</label>
+          <div class="row"><input data-f="ldap" data-k="user_filter" style="flex:1;min-width:220px">
+            <select id="preset" style="width:auto"><option value="">Шаблон…</option><option value="(sAMAccountName={username})">Active Directory</option><option value="(uid={username})">OpenLDAP (uid)</option><option value="(mail={username})">По e-mail</option></select></div>
+          <div class="hint">{username} заменяется введённым логином.</div></div>
+      </div>
+
+      <h3>Группы доступа (DN группы)</h3>
+      <div class="grid">
+        <div class="wide"><label>Полный доступ — всё, включая настройки</label><input data-f="ldap" data-k="full_group_dn" placeholder="CN=Backup-Admins,OU=Groups,DC=example,DC=com"></div>
+        <div class="wide"><label>Создание и восстановление копий</label><input data-f="ldap" data-k="operator_group_dn" placeholder="CN=Backup-Operators,OU=Groups,DC=example,DC=com"></div>
+        <div class="wide"><label>Просмотр — список копий и история, без действий</label><input data-f="ldap" data-k="viewer_group_dn" placeholder="CN=Backup-Viewers,OU=Groups,DC=example,DC=com"></div>
+      </div>
+      <div class="hint">Роль определяется по атрибуту <code>memberOf</code> пользователя (прямое членство, вложенные группы не раскрываются). Если пользователь в нескольких группах, берётся высшая роль; вне этих групп войти нельзя.</div>
+
+      <h3>Проверка</h3>
+      <div class="grid">
+        <div><label>Тестовый логин (необязательно)</label><input id="tu" autocomplete="off"></div>
+        <div><label>Тестовый пароль</label><input id="tp" type="password" autocomplete="new-password"></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button id="ld-test">Проверить</button>
+        <button id="ld-save" class="primary">Сохранить</button>
+      </div>
+      <div id="ld-res" class="res"></div>
+    </div>
+  </section>
+  <div class="ver foot" id="ver-foot"></div>
+</main>
+
+<!-- Пользователь -->
+<dialog id="udlg">
+  <h2 id="u-title">Пользователь</h2>
+  <div class="cols3">
+    <div><label>Создание копий</label><div class="checks" id="u-bk"></div></div>
+    <div><label>Источники восстановления</label><div class="checks" id="u-src"></div></div>
+    <div><label>Куда восстанавливать</label><div class="checks" id="u-dbs"></div></div>
+  </div>
+  <div class="hint">Три независимых доступа (личные + из групп): <b>создание копий</b> — для каких баз можно делать копии; <b>источники</b> — чьи копии можно брать при восстановлении; <b>куда восстанавливать</b> — какие существующие базы можно перезаписывать. Что не отмечено, того для пользователя нет: в «Создать копию» база не показывается, копии не попадают в «Восстановить копию», в базу нельзя восстановить.</div>
+  <label style="margin-top:12px">Группы</label>
+  <div class="checks" id="u-groups"></div>
+  <div id="u-dlg-res" class="res err"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:8px">
+    <button id="u-cancel">Отмена</button><button id="u-save" class="primary">Сохранить</button>
+  </div>
+</dialog>
+
+<!-- Группа -->
+<dialog id="gdlg">
+  <h2 id="g-title">Группа</h2>
+  <label>Название</label><input id="g-name" autocomplete="off">
+  <label style="margin-top:10px">Описание</label><input id="g-desc" autocomplete="off">
+  <label class="chk" style="margin-top:12px"><input type="checkbox" id="g-approver"> Участники подтверждают запросы на создание баз</label>
+  <div class="cols3" style="margin-top:12px">
+    <div><label>Создание копий</label><div class="checks" id="g-bk"></div></div>
+    <div><label>Источники восстановления</label><div class="checks" id="g-src"></div></div>
+    <div><label>Куда восстанавливать</label><div class="checks" id="g-dbs"></div></div>
+  </div>
+  <div class="hint">Три независимых доступа для всех участников группы: создание копий, источники восстановления (чьи копии можно брать) и базы, которые можно перезаписывать.</div>
+  <label style="margin-top:12px">Участники</label>
+  <div class="checks" id="g-members"></div>
+  <div id="g-dlg-res" class="res err"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:8px">
+    <button id="g-cancel">Отмена</button><button id="g-save" class="primary">Сохранить</button>
+  </div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const TABS = ["backups", "queue", "requests", "history", "settings"];
+let qTimer = null;
+let me = null, tab = "backups", sub = "storage", backups = [], watched = null, pollTimer = null, tickTimer = null;
+const can = p => !!me && me.perms.includes(p);
+
+async function api(path, { method = "GET", body } = {}) {
+  const r = await fetch("api/" + path, {
+    method, credentials: "same-origin",
+    headers: { "X-Requested-With": "fetch", "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let j = {};
+  try { j = await r.json(); } catch {}
+  if (r.status === 401 && me) { me = null; showLogin("Сессия истекла, войдите снова"); }
+  if (!r.ok) { const e = new Error(j.error || ("Ошибка " + r.status)); e.status = r.status; throw e; }
+  return j;
+}
+async function busy(btn, fn) {
+  btn.disabled = true;
+  try { return await fn(); } finally { btn.disabled = false; }
+}
+const say = (el, text, cls = "") => { el.textContent = text; el.className = "res " + cls; };
+const fmtSize = n => n >= 1e9 ? (n / 1e9).toFixed(2) + " ГБ" : n >= 1e6 ? (n / 1e6).toFixed(1) + " МБ" : Math.ceil(n / 1e3) + " КБ";
+const fmtLocal = s => s ? new Date(s).toLocaleString() : "";
+
+/* ---------- вход / выход ---------- */
+function showLogin(msg = "") {
+  clearTimeout(pollTimer);
+  clearInterval(tickTimer);
+  $("top").hidden = true;
+  for (const t of TABS) $("tab-" + t).hidden = true;
+  $("login").hidden = false;
+  say($("login-res"), msg, "err");
+  $("lp").value = "";
+}
+function applyMe() {
+  $("who").textContent = me.display + (me.display !== me.name ? " (" + me.name + ")" : "");
+  $("role").textContent = me.role_label;
+  $("nav-settings").hidden = !can("settings");
+  $("nav-history").hidden = !can("settings");       // история всего сервера — только полный доступ
+  $("nav-requests").hidden = !can("requests");
+  $("make").hidden = !can("backup");
+  $("rs-form").hidden = !can("restore");
+  $("rs-denied").hidden = can("restore");
+  $("rs-denied").textContent = `Восстановление недоступно для вашей роли «${me.role_label}». Его могут выполнять пользователи с ролью «Копии и восстановление» или «Полный доступ».`;
+  $("blist-card").hidden = !can("settings");       // «Сделанные копии» — только администратору
+}
+async function enter() {
+  $("login").hidden = true;
+  $("top").hidden = false;
+  applyMe();
+  show(((tab === "settings" || tab === "history") && !can("settings")) || (tab === "requests" && !can("requests")) ? "backups" : tab);
+  startTick();
+}
+/* Раз в 30 секунд: права могли измениться (например, добавили в группу подтверждающих) и появились новые запросы */
+function startTick() { clearInterval(tickTimer); tick(); tickTimer = setInterval(tick, 30000); }
+async function tick() {
+  if (!me) return;
+  try {
+    const r = await api("auth/me");
+    if (!r.authenticated) { me = null; showLogin("Сессия истекла, войдите снова"); return; }
+    me = r.user; applyMe();
+    if ((tab === "settings" && !can("settings")) || (tab === "requests" && !can("requests"))) { show("backups"); return; }
+    if (can("requests")) {
+      const q = await api("requests");
+      setCount(q.pending);
+      if (tab === "requests") renderRequests(q);
+    } else setCount(0);
+    const qq = await api("queue");
+    setQueueCount(qq.items.length);
+    if (tab === "queue") renderQueue(qq);
+  } catch {}
+}
+const setQueueCount = n => { $("queue-count").hidden = !n; $("queue-count").textContent = n; };
+const setCount = n => { $("req-count").hidden = !n; $("req-count").textContent = n; };
+$("login-form").onsubmit = async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button");
+  await busy(btn, async () => {
+    try {
+      const r = await api("auth/login", { method: "POST", body: { username: $("lu").value, password: $("lp").value } });
+      me = r.user; await enter();
+    } catch (err) { say($("login-res"), err.message, "err"); }
+  });
+};
+$("logout").onclick = async () => {
+  try { await api("auth/logout", { method: "POST" }); } catch {}
+  me = null; showLogin();
+};
+
+/* ---------- вкладки ---------- */
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.tab));
+function show(name) {
+  tab = name;
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
+  for (const t of TABS) $("tab-" + t).hidden = t !== name;
+  clearTimeout(qTimer);
+  if (name === "backups") { loadInfo(); loadDbs(); loadBackups(); loadRestore(); poll(); }
+  if (name === "queue") loadQueue();
+  if (name === "requests") loadRequests();
+  if (name === "history") loadHistory(true);
+  if (name === "settings") loadSettings();
+}
+
+/* ---------- копии ---------- */
+async function loadInfo() {
+  $("make-info").hidden = !can("settings");        // описание и место хранения — только администратору
+  if (!can("settings")) return;
+  try { $("dest").textContent = (await api("info")).storage; } catch {}
+}
+async function loadDbs() {
+  if (!can("backup")) return;
+  try {
+    const j = await api("databases?for=backup");
+    $("db").innerHTML = j.databases.map(d => `<option>${esc(d)}</option>`).join("")
+      || "<option value=''>Нет баз, для которых вам разрешены копии</option>";
+    $("go").disabled = !j.databases.length;
+    say($("make-res"), "");
+  } catch (e) {
+    $("db").innerHTML = "<option>—</option>";
+    say($("make-res"), "Нет связи с SQL Server: " + e.message, "err");
+  }
+}
+let bPage = 1, bTotal = 0;
+try { const v = localStorage.getItem("bsize"); if (["10", "50", "100", "500"].includes(v)) $("b-size").value = v; } catch {}
+const bSize = () => Number($("b-size").value) || 50;
+function pageList(cur, pages) {        // 1 … 4 5 [6] 7 8 … 20
+  const set = new Set([1, pages, cur, cur - 1, cur + 1, cur - 2, cur + 2].filter(n => n >= 1 && n <= pages));
+  const out = []; let prev = 0;
+  for (const n of [...set].sort((a, b) => a - b)) { if (n - prev > 1) out.push(null); out.push(n); prev = n; }
+  return out;
+}
+function renderPager() {
+  const size = bSize(), pages = Math.max(1, Math.ceil(bTotal / size));
+  const from = bTotal ? (bPage - 1) * size + 1 : 0, to = Math.min(bTotal, bPage * size);
+  $("b-range").textContent = bTotal ? `Записи ${from}–${to} из ${bTotal}` : "";
+  $("b-pager").innerHTML = pages < 2 ? "" :
+    `<button data-p="${bPage - 1}" ${bPage < 2 ? "disabled" : ""}>‹ Назад</button>`
+    + pageList(bPage, pages).map(n => n === null ? '<span class="gap">…</span>'
+      : `<button data-p="${n}" class="${n === bPage ? "on" : ""}">${n}</button>`).join("")
+    + `<button data-p="${bPage + 1}" ${bPage >= pages ? "disabled" : ""}>Вперёд ›</button>`;
+}
+async function loadBackups(page) {
+  if (!can("settings")) return;
+  if (typeof page === "number") bPage = page;
+  try {
+    let j = await api(`backups?limit=${bSize()}&offset=${(bPage - 1) * bSize()}`);
+    const pages = Math.max(1, Math.ceil(j.total / bSize()));
+    if (bPage > pages) { bPage = pages; j = await api(`backups?limit=${bSize()}&offset=${(bPage - 1) * bSize()}`); }
+    backups = j.backups; bTotal = j.total;
+    say($("blist-err"), "");
+  } catch (e) { backups = []; bTotal = 0; say($("blist-err"), "Не удалось получить список: " + e.message, "err"); }
+  renderPager();
+  $("bempty").hidden = backups.length > 0;
+  $("blist").innerHTML = backups.map((b, i) => `
+    <tr>
+      <td>${esc(b.database)}</td>
+      <td class="nw">${esc(b.finished.replace("T", " "))}</td>
+      <td class="nw">${fmtSize(b.compressed_size || b.size)}</td>
+      <td><code>${esc(b.path)}</code></td>
+      <td class="nw">${can("restore") ? `<button class="link" data-i="${i}">Восстановить</button>` : ""}</td>
+    </tr>`).join("");
+}
+$("b-size").onchange = () => { try { localStorage.setItem("bsize", $("b-size").value); } catch {} loadBackups(1); };
+$("b-pager").onclick = e => { const p = Number(e.target.dataset.p); if (p) loadBackups(p); };
+$("blist").onclick = e => { const i = e.target.dataset.i; if (i !== undefined) chooseCopy(backups[i]); };
+$("reload").onclick = () => { loadBackups(); loadDbs(); loadRestore(); };
+
+$("go").onclick = () => busy($("go"), async () => {
+  const database = $("db").value;
+  try {
+    const r = await api("backup", { method: "POST", body: { database } });
+    say($("make-res"), `Добавлено в очередь (позиция ${r.position})`, "ok");
+    watched = r.id; poll();
+  } catch (e) { say($("make-res"), e.message, "err"); }
+});
+
+const ACTION = { backup: "Копия", restore: "Восстановление", login: "Вход", login_failed: "Неудачный вход", logout: "Выход",
+  settings_ldap: "Настройки LDAP", settings_storage: "Настройки хранилища", settings_notify: "Настройки уведомлений", settings_tls: "HTTPS-сертификат", notify: "Уведомление", settings_test: "Проверка настроек",
+  request_create: "Запрос на создание базы", request_approve: "Запрос подтверждён", request_reject: "Запрос отклонён",
+  request_cancel: "Запрос отменён", user_added: "Новый пользователь", settings_access: "Настройки доступа",
+  queue_cancel: "Задача снята с очереди" };
+const STATUS = { ok: "успешно", error: "ошибка", running: "выполняется", interrupted: "прервано",
+  queued: "в очереди", cancelled: "отменено" };
+
+async function poll() {
+  clearTimeout(pollTimer);
+  if (!me) return;
+  try {
+    const q = await api("queue");
+    setQueueCount(q.items.length);
+    if (tab === "queue") renderQueue(q);
+    const box = $("job");
+    if (q.items.length) {
+      const run = q.items.find(i => i.status === "running");
+      const waiting = q.items.filter(i => i.status === "queued").length;
+      box.hidden = false; box.className = "banner";
+      box.textContent = (run ? `⏳ Выполняется: ${ACTION[run.action]} «${run.target}» (${run.username})` : "⏳ Очередь")
+        + (waiting ? ` · в очереди: ${waiting}` : "");
+      pollTimer = setTimeout(poll, 3000);
+    } else if (!watched) box.hidden = true;
+    if (watched) {
+      const r = await api("history/" + watched);
+      if (r.status === "queued" || r.status === "running") {
+        if (!q.items.length) pollTimer = setTimeout(poll, 1500);
+      } else {
+        watched = null;
+        box.hidden = false; box.className = "banner " + (r.status === "ok" ? "ok" : "err");
+        box.textContent = `${ACTION[r.action]} «${r.target}»: ${STATUS[r.status] || r.status}. ${r.details}`;
+        loadBackups(); loadRestore();
+        if (tab === "history" && can("settings")) loadHistory(true);
+        if (tab === "requests") loadRequests();
+      }
+    }
+  } catch {}
+}
+$("job").onclick = () => { if (!watched && !$("job").textContent.startsWith("⏳")) $("job").hidden = true; };
+
+/* ---------- очередь ---------- */
+function renderQueue(q) {
+  setQueueCount(q.items.length);
+  $("qempty").hidden = q.items.length > 0;
+  $("qlist").innerHTML = q.items.map(i => `
+    <tr>
+      <td>${i.position}</td>
+      <td class="nw">${esc(fmtLocal(i.ts))}</td>
+      <td>${esc(i.username)}${i.mine ? ' <span class="hint">(вы)</span>' : ""}</td>
+      <td>${esc(ACTION[i.action] || i.action)}</td>
+      <td>${esc(i.target)}</td>
+      <td><span class="badge ${esc(i.status)}">${esc(STATUS[i.status] || i.status)}</span></td>
+      <td class="nw">${i.can_cancel ? `<button class="link" data-id="${i.id}">Снять с очереди</button>` : ""}</td>
+    </tr>`).join("");
+}
+/* недавно завершённые: фильтры по столбцам; администратору — задачи всех, остальным — только свои (пути сокращены) */
+let qdLoaded = 0;
+function qdParams(limit, offset) {
+  const p = new URLSearchParams({ limit, offset, action: $("qd-action").value, status: $("qd-status").value,
+    target: $("qd-target").value.trim(), text: $("qd-text").value.trim() });
+  if (can("settings")) p.set("user", $("qd-user").value.trim());
+  const d = (id, end) => { const v = $(id).value; if (!v) return ""; const t = new Date(v + "T00:00:00"); if (end) t.setDate(t.getDate() + 1);
+    return t.toISOString().replace(/\.\d+Z$/, "Z"); };
+  if ($("qd-from").value) p.set("from", d("qd-from"));
+  if ($("qd-to").value) p.set("to", d("qd-to", true));
+  return p;
+}
+function qdRows(items) {
+  const adm = can("settings");
+  return items.map(i => `
+    <tr>
+      <td class="nw">${esc(fmtLocal(i.finished))}</td>
+      ${adm ? `<td>${esc(i.username)}</td>` : ""}
+      <td>${esc(ACTION[i.action] || i.action)}</td>
+      <td>${esc(i.target)}</td>
+      <td><span class="badge ${esc(i.status)}">${esc(STATUS[i.status] || i.status)}</span></td>
+      <td>${esc(i.details)}</td>
+    </tr>`).join("");
+}
+async function loadRecent(more) {
+  const adm = can("settings");
+  $("qd-user-box").hidden = !adm;
+  document.querySelectorAll(".qd-usercol").forEach(e => { e.hidden = !adm; });
+  $("qd-hint").textContent = adm ? "Задачи всех пользователей." : "Показаны только ваши задачи; пути к файлам сокращены.";
+  try {
+    const j = await api("queue/recent?" + (more ? qdParams(50, qdLoaded) : qdParams(Math.max(qdLoaded, 50), 0)));
+    if (more) $("qdone").insertAdjacentHTML("beforeend", qdRows(j.items)); else $("qdone").innerHTML = qdRows(j.items);
+    qdLoaded = more ? qdLoaded + j.items.length : j.items.length;
+    $("qdempty").hidden = qdLoaded > 0;
+    $("qd-more").hidden = !j.has_more;
+  } catch (e) { say($("q-res"), e.message, "err"); }
+}
+$("qd-go").onclick = () => { qdLoaded = 0; loadRecent(false); };
+$("qd-more").onclick = () => loadRecent(true);
+$("qd-reset").onclick = () => { document.querySelectorAll("#qd-filters input, #qd-filters select").forEach(e => { e.value = ""; }); qdLoaded = 0; loadRecent(false); };
+$("qd-filters").onkeydown = e => { if (e.key === "Enter") { qdLoaded = 0; loadRecent(false); } };
+async function loadQueue() {
+  clearTimeout(qTimer);
+  try {
+    const q = await api("queue");
+    renderQueue(q);
+    loadRecent(false);
+    say($("q-res"), "");
+    if (tab === "queue") qTimer = setTimeout(loadQueue, q.items.length ? 3000 : 10000);
+  } catch (e) { say($("q-res"), e.message, "err"); }
+}
+$("q-reload").onclick = loadQueue;
+$("qlist").onclick = async e => {
+  const id = e.target.dataset.id;
+  if (!id) return;
+  try { await api(`queue/${id}/cancel`, { method: "POST" }); say($("q-res"), "Задача снята с очереди", "ok"); }
+  catch (err) { say($("q-res"), err.message, "err"); }
+  const q = await api("queue"); renderQueue(q);
+};
+
+/* ---------- восстановление: форма «Добавить в очередь» ---------- */
+let rsources = [], rinfo = { databases: [], needs_approval: true, protected: [] }, rcopies = [], rsNameTouched = false;
+const rsIsNew = () => $("rs-target").value === "new";
+const rsDb = () => $("rs-target").value.slice(2);
+const rsProtected = () => !rsIsNew() && (rinfo.protected || []).includes(rsDb());
+
+function fillTargets(preferred, keep) {
+  $("rs-target").innerHTML = rinfo.databases.map(d =>
+    `<option value="d:${esc(d)}">${esc(d)}${(rinfo.protected || []).includes(d) ? " 🔒 по подтверждению администратора" : ""}</option>`).join("")
+    + '<option value="new">➕ Восстановить как новую базу…</option>';
+  const values = [...$("rs-target").options].map(o => o.value);
+  if (keep && values.includes(keep)) $("rs-target").value = keep;
+  else $("rs-target").value = rinfo.databases.includes(preferred) ? "d:" + preferred : "new";
+}
+function suggestName() {
+  if (!rsNameTouched) $("rs-newname").value = ($("rs-src").value || "db") + "_restored";
+}
+async function loadRestore() {
+  if (!can("restore")) return;
+  const keepSrc = $("rs-src").value, keepTgt = $("rs-target").value;
+  try {
+    [rsources, rinfo] = await Promise.all([api("restore/sources").then(j => j.sources), api("restore/targets")]);
+    say($("rs-res"), "");
+  } catch (e) {
+    rsources = []; rinfo = { databases: [], needs_approval: true, protected: [] };
+    say($("rs-res"), "Не удалось получить списки: " + e.message, "err");
+  }
+  $("rs-src").innerHTML = rsources.map(x => `<option value="${esc(x.database)}">${esc(x.database)} — копия от ${esc(x.finished.replace("T", " "))}</option>`).join("")
+    || '<option value="">Копий пока нет</option>';
+  if (rsources.some(x => x.database === keepSrc)) $("rs-src").value = keepSrc;
+  fillTargets($("rs-src").value, keepTgt);
+  suggestName();
+  await loadCopies($("rs-src").value, $("rs-copy").value);
+}
+async function loadCopies(db, want) {      // список всех копий выбранной базы + пункт «последняя»
+  rcopies = [];
+  if (db) {
+    try { rcopies = (await api("restore/copies?database=" + encodeURIComponent(db))).copies; }
+    catch (e) { say($("rs-res"), "Не удалось получить список копий: " + e.message, "err"); }
+  }
+  $("rs-copy").innerHTML = '<option value="">Использовать последнюю резервную копию</option>'
+    + rcopies.map(c => `<option value="${c.id}">${esc(c.finished.replace("T", " "))} — ${fmtSize(c.size)}</option>`).join("");
+  $("rs-copy").value = want && rcopies.some(c => String(c.id) === String(want)) ? String(want) : "";
+  rsUpdate();
+}
+async function chooseCopy(b) {           // администратор выбрал конкретную копию в таблице
+  if (![...$("rs-src").options].some(o => o.value === b.database))
+    $("rs-src").insertAdjacentHTML("beforeend", `<option value="${esc(b.database)}">${esc(b.database)}</option>`);
+  $("rs-src").value = b.database;
+  fillTargets(b.database);
+  suggestName();
+  await loadCopies(b.database, b.id);
+  $("rs").scrollIntoView({ behavior: "smooth", block: "center" });
+}
+function rsUpdate() {
+  const isNew = rsIsNew(), prot = rsProtected();
+  $("rs-newbox").hidden = !isNew;
+  $("rs-confirm-box").hidden = isNew;
+  $("rs-kick-box").hidden = isNew;
+  $("rs-src-hint").textContent = $("rs-copy").value
+    ? "Будет восстановлена выбранная копия."
+    : "Будет восстановлена последняя копия этой базы.";
+  // Что разрешено именно этому пользователю (настраивается в «Настройки → Пользователи / Группы / Защита баз»)
+  $("rs-access").textContent = "Ваши права: " + (rinfo.needs_approval
+    ? (rinfo.databases.length
+        ? "перезапись баз — " + rinfo.databases.map(d => d + ((rinfo.protected || []).includes(d) ? " 🔒" : "")).join(", ")
+        : "перезапись существующих баз вам не разрешена") + "; новая база — по запросу на подтверждение."
+    : "полный доступ: любые базы, новая база без запроса.");
+  let note, cls = "hint";
+  if (isNew) {
+    note = rinfo.needs_approval
+      ? "Новая база создаётся по запросу: его должен подтвердить участник группы подтверждения (или администратор). До подтверждения ничего не изменится."
+      : "Будет создана новая база; её файлы окажутся в папках по умолчанию SQL Server. Имя должно быть свободным.";
+    if (!rinfo.databases.length && rinfo.needs_approval)
+      note = "Вам не назначены базы для перезаписи (их задаёт администратор в «Настройки → Пользователи / Группы»). " + note;
+  } else {
+    $("rs-confirm-name").textContent = rsDb();
+    note = rsDb() === $("rs-src").value
+      ? "Существующая база будет ПЕРЕЗАПИСАНА данными из копии."
+      : `База «${rsDb()}» будет ПЕРЕЗАПИСАНА данными из копии базы «${$("rs-src").value}». Число файлов данных и журнала должно совпадать.`;
+    if (prot) note += " База защищена: перезапись выполнится только после подтверждения администратором — будет отправлен запрос.";
+    cls = "hint warn";
+  }
+  $("rs-note").textContent = note;
+  $("rs-note").className = cls;
+  const asRequest = (isNew && rinfo.needs_approval) || prot;
+  $("rs-go").textContent = asRequest ? "Отправить запрос" : "Добавить в очередь";
+  $("rs-go").className = isNew || prot ? "primary" : "danger";
+  $("rs-go").disabled = !$("rs-src").value || (isNew ? !$("rs-newname").value.trim() : $("rs-confirm").value !== rsDb());
+}
+$("rs-src").onchange = () => { fillTargets($("rs-src").value); suggestName(); loadCopies($("rs-src").value); };
+$("rs-copy").onchange = rsUpdate;
+$("rs-target").onchange = $("rs-confirm").oninput = rsUpdate;
+$("rs-newname").oninput = () => { rsNameTouched = true; rsUpdate(); };
+$("rs-go").onclick = () => busy($("rs-go"), async () => {
+  const isNew = rsIsNew();
+  const body = { database: $("rs-src").value, target: isNew ? $("rs-newname").value.trim() : rsDb(), new: isNew,
+    confirm: $("rs-confirm").value, kick_users: $("rs-kick").checked };
+  if ($("rs-copy").value) body.copy = Number($("rs-copy").value);
+  try {
+    const r = await api("restore", { method: "POST", body });
+    if (r.request) { show("requests"); say($("rq-res"), `Запрос №${r.request} отправлен на подтверждение`, "ok"); }
+    else {
+      $("rs-confirm").value = ""; $("rs-kick").checked = false; rsUpdate();
+      say($("rs-res"), `Добавлено в очередь (позиция ${r.position}). Очередь всех пользователей — в меню «Очереди».`, "ok");
+      watched = r.id; poll();
+    }
+  } catch (e) { say($("rs-res"), e.message, "err"); }
+});
+
+/* ---------- запросы на создание баз ---------- */
+function rqStatus(r) {
+  const by = r.decided_by ? `<div class="hint">${esc(r.decided_by)}${r.comment ? ": " + esc(r.comment) : ""}</div>` : "";
+  if (r.status === "pending") return '<span class="badge running">ожидает подтверждения</span>';
+  if (r.status === "rejected") return '<span class="badge error">отклонён</span>' + by;
+  if (r.status === "cancelled") return '<span class="badge interrupted">отменён</span>';
+  const done = { queued: ["queued", "в очереди"], running: ["running", "выполняется"], cancelled: ["cancelled", "снята с очереди"],
+    ok: ["ok", r.kind === "overwrite" ? "база перезаписана" : "база создана"] }[r.job_status];
+  if (done) return `<span class="badge ${done[0]}">${done[1]}</span>` + by;
+  return `<span class="badge error">${r.job_status ? "ошибка" : "подтверждён"}</span> ${esc(r.job_details || "")}` + by;
+}
+function renderRequests(q) {
+  setCount(q.pending);
+  $("req-hint").textContent = can("approve")
+    ? "Вы можете подтверждать и отклонять запросы (перезапись защищённых баз подтверждают только администраторы). Собственный запрос должен подтвердить кто-то другой."
+    : "Ваши запросы. Новые базы подтверждает участник внутренней группы подтверждения или администратор, перезапись защищённых баз — только администратор.";
+  $("rqempty").hidden = q.items.length > 0;
+  $("rqlist").innerHTML = q.items.map(r => `
+    <tr>
+      <td>${r.id}</td>
+      <td class="nw">${esc(fmtLocal(r.ts))}</td>
+      <td>${esc(r.requester_name)}</td>
+      <td>${esc(r.source_db)} → <b>${esc(r.target)}</b> <span class="chip">${r.kind === "overwrite" ? "перезапись защищённой базы" : "новая база"}</span>
+        <div class="hint"><code>${esc(r.path)}</code></div></td>
+      <td>${rqStatus(r)}</td>
+      <td class="nw">
+        ${r.can_decide ? `<button class="link" data-a="approve" data-id="${r.id}" data-t="${esc(r.target)}" data-k="${esc(r.kind)}">Подтвердить</button>
+                          <button class="link" data-a="reject" data-id="${r.id}">Отклонить</button>` : ""}
+        ${r.can_cancel ? `<button class="link" data-a="cancel" data-id="${r.id}">Отменить</button>` : ""}
+      </td>
+    </tr>`).join("");
+}
+async function loadRequests() {
+  try { renderRequests(await api("requests")); }
+  catch (e) { say($("rq-res"), e.message, "err"); }
+}
+$("rqlist").onclick = async e => {
+  const { a, id, t, k } = e.target.dataset;
+  if (!a) return;
+  let body = {};
+  if (a === "approve" && !confirm(k === "overwrite"
+    ? `Подтвердить ПЕРЕЗАПИСЬ защищённой базы «${t}»? Её текущие данные будут заменены, восстановление начнётся сразу.`
+    : `Подтвердить создание базы «${t}»? Восстановление начнётся сразу.`)) return;
+  if (a === "cancel" && !confirm("Отменить запрос?")) return;
+  if (a === "reject") { const c = prompt("Причина отказа (необязательно)"); if (c === null) return; body = { comment: c }; }
+  try {
+    const r = await api(`requests/${id}/${a}`, { method: "POST", body });
+    say($("rq-res"), a === "approve" ? "Подтверждено, восстановление запущено" : a === "reject" ? "Запрос отклонён" : "Запрос отменён", "ok");
+    if (a === "approve") { watched = r.id; poll(); }
+  } catch (err) { say($("rq-res"), err.message, "err"); }
+  loadRequests();
+};
+
+/* ---------- история ---------- */
+let hOffset = 0;
+async function loadHistory(reset) {
+  if (reset) hOffset = 0;
+  const q = new URLSearchParams({ limit: 50, offset: hOffset, action: $("h-action").value,
+    status: $("h-status").value, user: $("h-user").value.trim() });
+  try {
+    const j = await api("history?" + q);
+    const rows = j.items.map(i => `
+      <tr>
+        <td class="nw">${esc(fmtLocal(i.ts))}</td>
+        <td>${esc(i.username)}${i.source ? ` <span class="hint">(${esc(i.source)})</span>` : ""}</td>
+        <td class="nw">${esc(ACTION[i.action] || i.action)}</td>
+        <td>${esc(i.target)}</td>
+        <td><span class="badge ${esc(i.status)}">${esc(STATUS[i.status] || i.status)}</span></td>
+        <td>${esc(i.details)}${i.ip ? `<div class="hint">${esc(i.ip)}</div>` : ""}</td>
+      </tr>`).join("");
+    if (reset) $("hlist").innerHTML = rows; else $("hlist").insertAdjacentHTML("beforeend", rows);
+    hOffset += j.items.length;
+    $("hmore").hidden = !j.has_more;
+    $("hempty").hidden = hOffset > 0;
+  } catch (e) { $("hempty").hidden = false; $("hempty").textContent = e.message; }
+}
+$("h-go").onclick = () => loadHistory(true);
+$("hmore").onclick = () => loadHistory(false);
+
+/* ---------- настройки ---------- */
+function fill(section, cfg) {
+  document.querySelectorAll(`[data-f="${section}"]`).forEach(el => {
+    const k = el.dataset.k;
+    if (el.type === "checkbox") el.checked = !!cfg[k];
+    else if (el.hasAttribute("data-secret")) {
+      el.value = "";
+      el.placeholder = cfg[k + "_set"] ? "•••••• сохранён (пусто — не менять)" : "";
+    } else el.value = cfg[k] ?? "";
+  });
+}
+function collect(section) {
+  const o = {};
+  document.querySelectorAll(`[data-f="${section}"]`).forEach(el => {
+    o[el.dataset.k] = el.type === "checkbox" ? el.checked : el.value;
+  });
+  return o;
+}
+function pxType() {
+  const on = $("tg-proxy").value !== "none";
+  document.querySelectorAll("[data-px]").forEach(el => { el.hidden = !on; });
+}
+$("tg-proxy").onchange = pxType;
+function stType() {
+  const t = $("st-type").value;
+  document.querySelectorAll("[data-t]").forEach(el => { el.hidden = el.dataset.t !== t; });
+}
+$("st-type").onchange = stType;
+$("preset").onchange = e => { if (e.target.value) document.querySelector('[data-k="user_filter"]').value = e.target.value; e.target.value = ""; };
+
+async function loadSettings() {
+  showSub(sub);
+  try {
+    fill("storage", await api("settings/storage")); stType();
+    fill("ldap", await api("settings/ldap"));
+    fill("notify", await api("settings/notify")); pxType();
+  } catch (e) { say($("st-res"), e.message, "err"); }
+}
+function saver(section, btn, out) {
+  btn.onclick = () => busy(btn, async () => {
+    try {
+      fill(section, await api("settings/" + section, { method: "PUT", body: collect(section) }));
+      if (section === "storage") stType();
+      if (section === "notify") pxType();
+      say(out, "Сохранено", "ok");
+    } catch (e) { say(out, e.message, "err"); }
+  });
+}
+saver("storage", $("st-save"), $("st-res"));
+saver("ldap", $("ld-save"), $("ld-res"));
+saver("notify", $("nt-save"), $("nt-res"));
+for (const ch of ["email", "telegram", "bitrix24", "webhook"]) $("nt-test-" + ch).onclick = () => busy($("nt-test-" + ch), async () => {
+  say($("nt-res"), "Отправляю…");
+  try {
+    const r = await api("settings/notify/test", { method: "POST", body: { channel: ch, config: collect("notify") } });
+    say($("nt-res"), r.ok ? r.message : r.error, r.ok ? "ok" : "err");
+  } catch (e) { say($("nt-res"), e.message, "err"); }
+});
+
+$("st-test").onclick = () => busy($("st-test"), async () => {
+  say($("st-res"), "Пишу тестовую копию…");
+  try {
+    const r = await api("settings/storage/test", { method: "POST", body: { config: collect("storage") } });
+    say($("st-res"), r.ok ? r.message : r.error, r.ok ? "ok" : "err");
+  } catch (e) { say($("st-res"), e.message, "err"); }
+});
+$("ld-test").onclick = () => busy($("ld-test"), async () => {
+  say($("ld-res"), "Проверяю…");
+  try {
+    const r = await api("settings/ldap/test", { method: "POST", body: {
+      config: collect("ldap"), test_user: $("tu").value, test_password: $("tp").value } });
+    say($("ld-res"), r.ok ? [r.connection, r.user].filter(Boolean).join("\n") : r.error, r.ok ? "ok" : "err");
+    $("ld-res").style.whiteSpace = "pre-line";
+  } catch (e) { say($("ld-res"), e.message, "err"); }
+});
+
+/* ---------- HTTPS-сертификат ---------- */
+let certWait = null, certTimer = null, certPendingCsr = "";
+const fmtDay = iso => iso ? new Date(iso).toLocaleDateString() : "—";
+async function loadCert() {
+  clearTimeout(certTimer);
+  try {
+    const j = await api("settings/tls");
+    $("cert-conn").textContent = j.secure ? "Страница сейчас открыта по HTTPS." : "Страница сейчас открыта по HTTP (без шифрования).";
+    const ins = j.installed;
+    $("cert-installed").hidden = !ins;
+    if (ins) $("cert-installed").innerHTML = `<b>Установленный сертификат</b><dl style="margin-top:6px">
+      <dt>Субъект</dt><dd>${esc(ins.subject)}</dd><dt>Выдан</dt><dd>${esc(ins.issuer)}</dd>
+      <dt>Имена</dt><dd>${esc(ins.sans.join(", ") || "—")}</dd>
+      <dt>Действует до</dt><dd class="${ins.days_left < 0 ? "err" : ins.days_left < 30 ? "warn" : ""}">${esc(fmtDay(ins.not_after))} (${ins.days_left < 0 ? "истёк" : "осталось дней: " + ins.days_left})</dd>
+      <dt>SHA-256</dt><dd><code>${esc(ins.sha256)}</code></dd></dl>`;
+    if (!$("c-cn").value) { $("c-cn").value = j.default_cn && j.default_cn !== "localhost" ? j.default_cn : ""; }
+    const p = j.pending;
+    $("cert-pending").hidden = !p;
+    if (p) {
+      certPendingCsr = p.csr; $("c-csr").value = p.csr;
+      $("c-pend-info").textContent = `Создан запрос: ${p.subject}; имена: ${p.sans.join(", ")}; RSA ${p.key_bits}. Создан ${fmtLocal(p.created)}.`;
+    }
+    $("c-create").textContent = p ? "Создать новый запрос (заменит текущий)" : "Создать запрос";
+    const a = j.apply, w = j.waiting;
+    if (w && (!a || a.id !== w.id)) {
+      say($("cert-apply"), "Сертификат передан на применение, ожидаю nginx…");
+      certTimer = setTimeout(loadCert, 2000);
+      return;
+    }
+    if (a) say($("cert-apply"), (a.ok ? "✔ " : "✖ ") + a.message + (a.ok && a.https_port ? ` — откройте https://${location.hostname}${a.https_port === 443 ? "" : ":" + a.https_port}/` : ""), a.ok ? "ok" : "err");
+    else say($("cert-apply"), "");
+  } catch (e) { say($("cert-apply"), e.message, "err"); }
+}
+$("c-create").onclick = () => busy($("c-create"), async () => {
+  const body = { cn: $("c-cn").value, sans: $("c-sans").value, org: $("c-org").value, unit: $("c-unit").value,
+    country: $("c-country").value, state: $("c-state").value, city: $("c-city").value, key_bits: Number($("c-bits").value) };
+  try { await api("settings/tls/csr", { method: "POST", body }); say($("c-res"), "Запрос создан — скачайте или скопируйте CSR и отправьте в центр сертификации", "ok"); await loadCert(); }
+  catch (e) { say($("c-res"), e.message, "err"); }
+});
+$("c-copy").onclick = async () => { try { await navigator.clipboard.writeText(certPendingCsr); say($("c-res"), "CSR скопирован", "ok"); } catch { $("c-csr").select(); say($("c-res"), "Выделено — нажмите Ctrl+C", ""); } };
+$("c-cancel").onclick = async () => {
+  if (!confirm("Отменить запрос? Закрытый ключ будет удалён; выданный по этому CSR сертификат станет непригодным.")) return;
+  try { await api("settings/tls/csr", { method: "DELETE" }); $("c-csr").value = ""; await loadCert(); } catch (e) { say($("c-res"), e.message, "err"); }
+};
+$("c-file").onchange = () => {
+  const f = $("c-file").files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { const b = new Uint8Array(r.result); let bin = ""; for (const x of b) bin += String.fromCharCode(x); $("c-pem").value = ""; certB64 = btoa(bin); say($("c-res"), "Файл «" + f.name + "» прочитан", ""); };
+  r.readAsArrayBuffer(f);
+};
+let certB64 = "";
+$("c-pem").oninput = () => { certB64 = ""; };
+$("c-install").onclick = () => busy($("c-install"), async () => {
+  const body = { https_port: Number($("c-port").value), redirect_http: $("c-redir").checked };
+  if ($("c-pem").value.trim()) body.certificate = $("c-pem").value; else if (certB64) body.certificate_b64 = certB64;
+  else return say($("c-res"), "Выберите файл сертификата или вставьте его текст", "err");
+  try {
+    const r = await api("settings/tls/install", { method: "POST", body });
+    const c = r.certificate;
+    say($("c-res"), `Сертификат принят: ${c.subject}, действует до ${fmtDay(c.not_after)}. ` + (r.warnings.length ? "Внимание: " + r.warnings.join("; ") : "Применяю…"), r.warnings.length ? "warn" : "ok");
+    $("c-pem").value = ""; certB64 = ""; $("c-file").value = "";
+    certTimer = setTimeout(loadCert, 1500);
+  } catch (e) { say($("c-res"), e.message, "err"); }
+});
+
+/* ---------- пользователи и группы ---------- */
+const SYSTEM_DBS = ["master", "model", "msdb", "tempdb"];
+const ROLE_NAMES = { full: "Полный доступ", operator: "Копии и восстановление", viewer: "Просмотр" };
+let usersCache = [], groupsCache = [], ucur = null, gcur = null;
+
+function showSub(name) {
+  sub = name;
+  document.querySelectorAll(".sub button").forEach(b => b.classList.toggle("on", b.dataset.sub === name));
+  document.querySelectorAll(".card[data-sub]").forEach(c => { c.hidden = c.dataset.sub !== name; });
+  if (name === "users" || name === "groups") loadAccess();
+  if (name === "protected") loadProtected();
+  if (name === "cert") loadCert();
+}
+document.querySelectorAll(".sub button").forEach(b => b.onclick = () => showSub(b.dataset.sub));
+
+async function dbChoices(stored) {
+  let live = [];
+  try { live = (await api("databases")).databases.filter(d => !SYSTEM_DBS.includes(d)); } catch {}
+  return [...new Set([...live, ...stored])].sort((x, y) => x.localeCompare(y))
+    .map(d => ({ v: d, t: live.includes(d) ? d : d + " (нет на сервере)" }));
+}
+function checklist(el, items, selected) {
+  el.innerHTML = items.length
+    ? items.map(i => `<label class="chk"><input type="checkbox" value="${esc(i.v)}" ${selected.includes(i.v) ? "checked" : ""}> ${esc(i.t)}</label>`).join("")
+    : '<div class="hint">Нет вариантов</div>';
+}
+const picked = el => [...el.querySelectorAll("input:checked")].map(i => i.value);
+
+async function loadAccess() {
+  try {
+    usersCache = (await api("access/users")).users;
+    groupsCache = (await api("access/groups")).groups;
+    renderUsers(); renderGroups();
+    say($("u-res"), ""); say($("g-res"), "");
+  } catch (e) { say($("u-res"), e.message, "err"); }
+}
+function renderUsers() {
+  $("uempty").hidden = usersCache.length > 0;
+  const gname = id => (groupsCache.find(g => g.id === id) || {}).name || "?";
+  $("ulist").innerHTML = usersCache.map((u, i) => `
+    <tr>
+      <td>${esc(u.name)}</td><td>${esc(u.display)}</td><td>${esc(ROLE_NAMES[u.role] || u.role)}</td>
+      <td class="nw">${esc(fmtLocal(u.last_login))}</td>
+      <td>${u.groups.map(g => `<span class="chip">${esc(gname(g))}</span>`).join("")}</td>
+      ${["backup_dbs", "source_dbs", "allowed_dbs"].map(k =>
+        `<td>${u.role === "full" ? '<span class="hint">без ограничений</span>' : u[k].length}</td>`).join("")}
+      <td class="nw"><button class="link" data-a="edit" data-i="${i}">Настроить</button>
+          <button class="link" data-a="del" data-i="${i}">Убрать</button></td>
+    </tr>`).join("");
+}
+function renderGroups() {
+  $("gempty").hidden = groupsCache.length > 0;
+  $("glist").innerHTML = groupsCache.map((g, i) => `
+    <tr>
+      <td>${esc(g.name)}${g.description ? `<div class="hint">${esc(g.description)}</div>` : ""}</td>
+      <td>${g.approver ? "да" : "—"}</td>
+      ${["backup_dbs", "source_dbs", "allowed_dbs"].map(k =>
+        `<td>${g[k].map(d => `<span class="chip">${esc(d)}</span>`).join("") || "—"}</td>`).join("")}
+      <td>${esc(g.members.join(", ")) || "—"}</td>
+      <td class="nw"><button class="link" data-a="edit" data-i="${i}">Изменить</button>
+          <button class="link" data-a="del" data-i="${i}">Удалить</button></td>
+    </tr>`).join("");
+}
+
+$("ulist").onclick = async e => {
+  const { a, i } = e.target.dataset;
+  if (!a) return;
+  const u = usersCache[i];
+  if (a === "edit") {
+    ucur = u;
+    $("u-title").textContent = `Пользователь: ${u.display} (${u.name})`;
+    for (const [id, k] of [["u-bk", "backup_dbs"], ["u-src", "source_dbs"], ["u-dbs", "allowed_dbs"]])
+      checklist($(id), await dbChoices(u[k]), u[k]);
+    checklist($("u-groups"), groupsCache.map(g => ({ v: String(g.id), t: g.name })), u.groups.map(String));
+    say($("u-dlg-res"), "", "err");
+    $("udlg").showModal();
+  } else if (a === "del" && confirm(`Убрать «${u.name}» из списка? Личные настройки и членство в группах будут сброшены; пользователь появится снова при следующем входе.`)) {
+    try { await api("access/users/" + encodeURIComponent(u.name), { method: "DELETE" }); } catch (err) { say($("u-res"), err.message, "err"); }
+    loadAccess();
+  }
+};
+$("u-cancel").onclick = () => $("udlg").close();
+$("u-save").onclick = () => busy($("u-save"), async () => {
+  try {
+    await api("access/users/" + encodeURIComponent(ucur.name), { method: "PUT", body: {
+      backup_dbs: picked($("u-bk")), source_dbs: picked($("u-src")), allowed_dbs: picked($("u-dbs")), groups: picked($("u-groups")).map(Number) } });
+    $("udlg").close();
+    say($("u-res"), "Сохранено", "ok");
+    loadAccess();
+  } catch (e) { say($("u-dlg-res"), e.message, "err"); }
+});
+
+async function openGroup(g) {
+  gcur = g;
+  $("g-title").textContent = g ? "Группа: " + g.name : "Новая группа";
+  $("g-name").value = g ? g.name : "";
+  $("g-desc").value = g ? g.description : "";
+  $("g-approver").checked = !!(g && g.approver);
+  for (const [id, k] of [["g-bk", "backup_dbs"], ["g-src", "source_dbs"], ["g-dbs", "allowed_dbs"]])
+    checklist($(id), await dbChoices(g ? g[k] : []), g ? g[k] : []);
+  checklist($("g-members"), usersCache.map(u => ({ v: u.name, t: `${u.display} (${u.name})` })), g ? g.members : []);
+  say($("g-dlg-res"), "", "err");
+  $("gdlg").showModal();
+}
+$("g-new").onclick = async () => { if (!usersCache.length) await loadAccess(); openGroup(null); };
+$("glist").onclick = async e => {
+  const { a, i } = e.target.dataset;
+  if (!a) return;
+  const g = groupsCache[i];
+  if (a === "edit") openGroup(g);
+  else if (a === "del" && confirm(`Удалить группу «${g.name}»? Участники потеряют права, полученные через неё.`)) {
+    try { await api("access/groups/" + g.id, { method: "DELETE" }); } catch (err) { say($("g-res"), err.message, "err"); }
+    loadAccess();
+  }
+};
+$("g-cancel").onclick = () => $("gdlg").close();
+$("g-save").onclick = () => busy($("g-save"), async () => {
+  const body = { name: $("g-name").value, description: $("g-desc").value, approver: $("g-approver").checked,
+    backup_dbs: picked($("g-bk")), source_dbs: picked($("g-src")), allowed_dbs: picked($("g-dbs")), members: picked($("g-members")) };
+  try {
+    await api(gcur ? "access/groups/" + gcur.id : "access/groups", { method: gcur ? "PUT" : "POST", body });
+    $("gdlg").close();
+    say($("g-res"), "Сохранено", "ok");
+    loadAccess();
+  } catch (e) { say($("g-dlg-res"), e.message, "err"); }
+});
+
+async function loadProtected() {
+  try {
+    const cur = (await api("access/protected")).databases;
+    checklist($("p-dbs"), await dbChoices(cur), cur);
+    say($("p-res"), "");
+  } catch (e) { say($("p-res"), e.message, "err"); }
+}
+$("p-save").onclick = () => busy($("p-save"), async () => {
+  try {
+    await api("access/protected", { method: "PUT", body: { databases: picked($("p-dbs")) } });
+    say($("p-res"), "Сохранено", "ok");
+  } catch (e) { say($("p-res"), e.message, "err"); }
+});
+
+/* ---------- старт ---------- */
+(async () => {
+  try {                                              // версия сервиса (видна и на экране входа)
+    const v = (await api("health")).version;
+    $("ver-top").textContent = "v" + v; $("ver-foot").textContent = "MSSQL Backup · версия " + v;
+  } catch {}
+  try {
+    const r = await api("auth/me");
+    if (r.authenticated) { me = r.user; await enter(); } else showLogin();
+  } catch { showLogin(); }
+})();
+</script>
+</body>
+</html>

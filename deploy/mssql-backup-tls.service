@@ -1,0 +1,10 @@
+[Unit]
+Description=Применение HTTPS-сертификата MSSQL Backup
+After=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/mssql-backup/tls-apply.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
