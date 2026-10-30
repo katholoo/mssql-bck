@@ -223,11 +223,12 @@ def valid_db_name(name):
             and not any(ord(c) < 32 for c in name))
 
 
-def _restore_into_existing(cur, src, source_db, target):
+def _restore_into_existing(cur, src, source_db, target, checksum=True):
     """Перезапись существующей базы. Для другой базы (не исходной) файлы копии по порядку
     переносятся на файлы целевой базы, поэтому число файлов данных и журнала должно совпадать."""
+    ck = ", CHECKSUM" if checksum else ""
     if target == source_db:
-        return "RESTORE DATABASE %s FROM %s WITH REPLACE, RECOVERY, CHECKSUM" % (qid(target), src)
+        return "RESTORE DATABASE %s FROM %s WITH REPLACE, RECOVERY%s" % (qid(target), src, ck)
 
     cur.execute("RESTORE FILELISTONLY FROM %s" % src)
     backup_files = [(r[0], r[2]) for r in cur.fetchall()]
@@ -245,10 +246,10 @@ def _restore_into_existing(cur, src, source_db, target):
             "Структура файлов копии (данные: %d, журнал: %d) не совпадает с базой «%s» (данные: %d, журнал: %d). "
             "Восстановите как новую базу" % (len(bdata), len(blog), target, len(tdata), len(tlog)))
     moves = ["MOVE %s TO %s" % (qlit(n), qlit(p)) for n, p in list(zip(bdata, tdata)) + list(zip(blog, tlog))]
-    return "RESTORE DATABASE %s FROM %s WITH %s, REPLACE, RECOVERY, CHECKSUM" % (qid(target), src, ", ".join(moves))
+    return "RESTORE DATABASE %s FROM %s WITH %s, REPLACE, RECOVERY%s" % (qid(target), src, ", ".join(moves), ck)
 
 
-def run_restore(st, path, source_db, target, kick_users=False, create=False):
+def run_restore(st, path, source_db, target, kick_users=False, create=False, checksum=True):
     """create=False — перезаписать существующую базу target; create=True — создать новую."""
     if target in SYSTEM_DBS:
         raise ValueError("Восстановление системных баз запрещено")
@@ -263,7 +264,7 @@ def run_restore(st, path, source_db, target, kick_users=False, create=False):
         if not create:
             if not exists:
                 raise ValueError("База «%s» не найдена" % target)
-            sql = _restore_into_existing(cur, src, source_db, target)
+            sql = _restore_into_existing(cur, src, source_db, target, checksum)
             if kick_users:
                 cur.execute("ALTER DATABASE %s SET SINGLE_USER WITH ROLLBACK IMMEDIATE" % qid(target))
             try:
@@ -295,8 +296,9 @@ def run_restore(st, path, source_db, target, kick_users=False, create=False):
                 folder, safe_name(target), safe_name(logical), ext))))
         if not moves:
             raise ValueError("В копии не найдено файлов базы")
-        cur.execute("RESTORE DATABASE %s FROM %s WITH %s, RECOVERY, CHECKSUM"
-                    % (qid(target), src, ", ".join(moves)))
+        ck = ", CHECKSUM" if checksum else ""
+        cur.execute("RESTORE DATABASE %s FROM %s WITH %s, RECOVERY%s"
+                    % (qid(target), src, ", ".join(moves), ck))
         return "%s -> %s (новая база)" % (path, target)
 
 

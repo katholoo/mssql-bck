@@ -247,7 +247,8 @@ def _run_job(job):
     p, st = job["params"], config.load("storage")        # настройки хранилища читаются при выполнении
     if job["action"] == "backup":
         return mssql_ops.run_backup(st, p["database"])
-    return mssql_ops.run_restore(st, p["path"], p["source"], p["target"], bool(p.get("kick")), bool(p.get("create")))
+    return mssql_ops.run_restore(st, p["path"], p["source"], p["target"], bool(p.get("kick")), bool(p.get("create")),
+                                  bool(p.get("checksum", True)))
 
 
 def _worker():
@@ -535,14 +536,17 @@ def restore():
             # Защищённая база: перезапись только после подтверждения администратором
             if access.has_pending(target):
                 return jsonify(error="Запрос на перезапись базы «%s» уже ожидает подтверждения" % target), 409
-            rid = access.create_request(user, path, source, target, "overwrite", bool(data.get("kick_users")))
+            rid = access.create_request(user, path, source, target, "overwrite", bool(data.get("kick_users")),
+                                       data.get("checksum", True) is not False)
             log_event("request_create", "%s -> %s" % (source, target),
                       details="запрос №%d на перезапись защищённой базы, копия %s" % (rid, path))
             return jsonify(request=rid, needs_approval=True, kind="overwrite"), 202
 
     kick = bool(data.get("kick_users")) and not create
+    checksum = data.get("checksum", True) is not False
     hid, pos = enqueue("restore", "%s -> %s" % (source, target),
-                       {"path": path, "source": source, "target": target, "kick": kick, "create": create}, path)
+                       {"path": path, "source": source, "target": target, "kick": kick, "create": create,
+                        "checksum": checksum}, path)
     return jsonify(id=hid, position=pos), 202
 
 
@@ -599,9 +603,11 @@ def request_approve(rid):
         return jsonify(error="Запрос уже обработан"), 409
     requester = {"name": req["requester_name"], "source": req["requester_source"], "role": req["requester_role"]}
     src, target, path, kick = req["source_db"], req["target"], req["path"], bool(req["kick"])
+    checksum = bool(req.get("checksum", 1))
     try:
         hid, pos = enqueue("restore", "%s -> %s" % (src, target),
-                           {"path": path, "source": src, "target": target, "kick": kick, "create": not overwrite},
+                           {"path": path, "source": src, "target": target, "kick": kick, "create": not overwrite,
+                            "checksum": checksum},
                            "запрос №%d от %s, подтвердил %s; %s" % (rid, req["requester_name"], user["name"], path),
                            user=requester, ip=client_ip(), keep=True)
     except Exception:

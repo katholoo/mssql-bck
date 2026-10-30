@@ -79,6 +79,8 @@ def _db():
                 db.execute("ALTER TABLE requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'create'")
             if "kick" not in cols:
                 db.execute("ALTER TABLE requests ADD COLUMN kick INTEGER NOT NULL DEFAULT 0")
+            if "checksum" not in cols:
+                db.execute("ALTER TABLE requests ADD COLUMN checksum INTEGER NOT NULL DEFAULT 1")
             # Миграция: доступ к базам делится на «создание копий» (backup_dbs) и «источники восстановления» (source_dbs).
             # Раньше этого не было (или был один общий список visible_dbs); чтобы ничего не сломалось, оба новых списка
             # заполняются из общего списка, а при его отсутствии — из баз, разрешённых для восстановления.
@@ -272,18 +274,18 @@ def is_approver(name):
 
 # ---------- запросы на подтверждение ----------
 REQ_COLS = ("id", "ts", "requester", "requester_name", "requester_source", "requester_role", "path",
-            "source_db", "target", "status", "decided_by", "decided_ts", "comment", "job_id", "kind", "kick")
+            "source_db", "target", "status", "decided_by", "decided_ts", "comment", "job_id", "kind", "kick", "checksum")
 
 
-def create_request(user, path, source_db, target, kind="create", kick=False):
+def create_request(user, path, source_db, target, kind="create", kick=False, checksum=True):
     """kind: create — новая база; overwrite — перезапись защищённой базы (подтверждают только администраторы)."""
     with history.lock:
         db = _db()
         rid = db.execute(
             "INSERT INTO requests (ts, requester, requester_name, requester_source, requester_role, path, source_db, "
-            "target, kind, kick) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "target, kind, kick, checksum) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (history._now(), key(user["name"]), user["name"], user.get("source", ""), user.get("role", ""),
-             path, source_db, target, kind, int(kick))).lastrowid
+             path, source_db, target, kind, int(kick), int(checksum))).lastrowid
         db.commit()
     return rid
 
