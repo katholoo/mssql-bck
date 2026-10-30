@@ -631,6 +631,7 @@ class Tests(unittest.TestCase):
             self.assertEqual(put({"telegram_enabled": True, "telegram_token": tok, "telegram_chat": "abc"}).status_code, 400)
             self.assertEqual(put({"bitrix_enabled": True, "bitrix_url": base + "/x", "bitrix_dialog": "1"}).status_code, 400)
             self.assertEqual(put({"bitrix_enabled": True, "bitrix_url": base + "/rest/1/abc/", "bitrix_dialog": "x"}).status_code, 400)
+            self.assertEqual(put({"bitrix_enabled": True, "bitrix_url": base + "/rest/1/abc/", "bitrix_dialog": "sg7"}).status_code, 200)
             r = put({"telegram_enabled": True, "telegram_token": tok, "telegram_chat": "-1001234",
                      "bitrix_enabled": True, "bitrix_url": base + "/rest/1/abc/", "bitrix_dialog": "chat15"})
             self.assertEqual(r.status_code, 200, r.get_json())
@@ -800,6 +801,20 @@ class Tests(unittest.TestCase):
                          "Cannot open backup device 'y.bak'. Operating system error 2")
         self.assertEqual(rt("backup", "error", "диск полон: /var/x"), "диск полон: /var/x")   # ошибки копии без изменений
         self.assertEqual(notify.fmt_size(2_500_000_000), "2.50 ГБ")
+
+    def test_20b_restore_checksum_option(self):
+        a = admin()
+        path = Fake.backups[0][4]
+        Fake.sqls.clear()
+        r = a.post("/restore", json={"path": path, "target": "sales", "confirm": "sales", "checksum": False}, headers=H)
+        self.assertEqual(wait_job(a, r.get_json()["id"])["status"], "ok")
+        joined = "\n".join(Fake.sqls)
+        self.assertIn("RESTORE DATABASE [sales] FROM DISK = N'%s' WITH REPLACE, RECOVERY" % path, joined)
+        self.assertNotIn("CHECKSUM", joined)
+        Fake.sqls.clear()
+        r = a.post("/restore", json={"path": path, "target": "sales", "confirm": "sales"}, headers=H)  # по умолчанию включено
+        self.assertEqual(wait_job(a, r.get_json()["id"])["status"], "ok")
+        self.assertIn("RECOVERY, CHECKSUM", "\n".join(Fake.sqls))
 
     def test_20_restore(self):
         a = admin()
