@@ -165,6 +165,7 @@
         </div>
       </div>
       <label class="chk" id="rs-kick-box" style="margin-top:12px"><input type="checkbox" id="rs-kick"> Отключить активные подключения к базе (ROLLBACK IMMEDIATE)</label>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="rs-checksum" checked> Проверять контрольные суммы копии (CHECKSUM). Снимите галочку для копий, сделанных без CHECKSUM</label>
       <div class="hint" id="rs-note"></div>
       <div class="row" style="margin-top:12px"><button id="rs-go" class="primary">Добавить в очередь</button></div>
       <div id="rs-res" class="res"></div>
@@ -464,8 +465,8 @@
       <label class="chk"><input type="checkbox" data-f="notify" data-k="bitrix_enabled"> Отправлять в Bitrix24</label>
       <div class="grid">
         <div><label>Входящий вебхук</label><input data-f="notify" data-k="bitrix_url" data-secret type="password" autocomplete="off" placeholder="https://портал.bitrix24.ru/rest/1/код/"></div>
-        <div><label>Кому (id пользователя или chatN)</label><input data-f="notify" data-k="bitrix_dialog" placeholder="1 или chat15"></div>
-        <div class="wide hint">В Bitrix24: Разработчикам → Другое → Входящий вебхук, право «Чат и уведомления (im)». Скопируйте URL вида <code>…/rest/1/код/</code>. Сообщение придёт в личный чат пользователя (id — число) или в групповой чат (<code>chat</code> + номер).</div>
+        <div><label>Кому (id, chatN или sgN)</label><input data-f="notify" data-k="bitrix_dialog" placeholder="1, chat15 или sg7"></div>
+        <div class="wide hint">В Bitrix24: Разработчикам → Другое → Входящий вебхук, право «Чат и уведомления (im)». Скопируйте URL вида <code>…/rest/1/код/</code>. Бот не нужен: сообщение отправляется от имени владельца вебхука (создайте для этого отдельного пользователя, например «Backup»). Получатель: личный чат — id пользователя; обычный чат — <code>chat</code> + номер (<code>im.chat.get</code>); чат рабочей группы/проекта — <code>sg</code> + номер группы. Отправитель должен быть участником чата или группы.</div>
       </div>
       <div class="row" style="margin-top:10px"><button id="nt-test-bitrix24">Отправить тест в Bitrix24</button></div>
       <h3 style="margin-top:18px">Webhook (произвольный)</h3>
@@ -956,7 +957,7 @@ $("rs-newname").oninput = () => { rsNameTouched = true; rsUpdate(); };
 $("rs-go").onclick = () => busy($("rs-go"), async () => {
   const isNew = rsIsNew();
   const body = { database: $("rs-src").value, target: isNew ? $("rs-newname").value.trim() : rsDb(), new: isNew,
-    confirm: $("rs-confirm").value, kick_users: $("rs-kick").checked };
+    confirm: $("rs-confirm").value, kick_users: $("rs-kick").checked, checksum: $("rs-checksum").checked };
   if ($("rs-copy").value) body.copy = Number($("rs-copy").value);
   try {
     const r = await api("restore", { method: "POST", body });
