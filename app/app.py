@@ -14,6 +14,7 @@ import history
 import ldap_auth
 import mssql_ops
 import notify
+import planner
 import tls
 
 logging.basicConfig(level=logging.INFO)
@@ -76,6 +77,8 @@ PERMS = {
     "info": "view", "databases": "view", "backups": "settings",     # список копий — только администратору
     "history_list": "settings", "history_item": "view", "queue_list": "view", "queue_recent": "view", "queue_cancel": "view",
     "restore_sources": "restore", "restore_copies": "restore",
+    "files_list": "settings", "files_info": "settings",       # обзор файлов сервера — только администратору
+    "schedule_list": "backup", "schedule_add": "backup", "schedule_cancel": "backup",
     "backup": "backup", "restore": "restore", "restore_targets": "restore", "request_cancel": "restore",
     "requests_list": "requests", "request_approve": "approve", "request_reject": "approve",
     "access_users": "settings", "access_user_put": "settings", "access_user_delete": "settings",
@@ -424,6 +427,124 @@ def backup():
     return jsonify(id=hid, position=pos), 202
 
 
+# ---------- Отложенные копии ----------
+def _plan_view(r, user):
+    mine = access.key(r["username"]) == access.key(user["name"])
+    return {"id": r["id"], "database": r["database"], "run_at": r["run_at"], "status": r["status"],
+            "username": r["username"], "mine": mine, "note": r["note"],
+            "can_cancel": r["status"] == "pending" and (mine or user.get("role") == "full")}
+
+
+@app.get("/schedule")
+def schedule_list():
+    user = actor()
+    rows = planner.listing(None if user.get("role") == "full" else user["name"])
+    return jsonify(items=[_plan_view(r, user) for r in rows])
+
+
+@app.post("/schedule")
+def schedule_add():
+    data = request.get_json(silent=True) or {}
+    db, user = data.get("database"), actor()
+    if not isinstance(db, str) or not db:
+        return jsonify(error="Не указана база"), 400
+    if not can(user, "backup", db):
+        return jsonify(error="Создавать копии базы «%s» вам не разрешено" % db), 403
+    try:
+        run_at = planner.parse_time(data.get("run_at"))
+        rid = planner.add(user, db, run_at)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    log_event("schedule_add", db, details="отложенная копия №%d на %s UTC" % (rid, planner._fmt(run_at)[:16].replace("T", " ")))
+    return jsonify(id=rid, run_at=planner._fmt(run_at)), 201
+
+
+@app.post("/schedule/<int:rid>/cancel")
+def schedule_cancel(rid):
+    user = actor()
+    row = planner.get(rid)
+    if not row:
+        return jsonify(error="Задание не найдено"), 404
+    if access.key(row["username"]) != access.key(user["name"]) and user.get("role") != "full":
+        return jsonify(error="Отменить отложенную копию может её автор или администратор"), 403
+    if not planner.cancel(rid):
+        return jsonify(error="Задание уже запущено или отменено"), 409
+    log_event("schedule_cancel", row["database"], details="отложенная копия №%d (%s UTC), автор %s"
+              % (rid, row["run_at"][:16].replace("T", " "), row["username"]))
+    return jsonify(ok=True)
+
+
+def run_due_schedules():
+    """Ставит в очередь копии, время которых наступило. Вызывается планировщиком раз в несколько секунд."""
+    for r in planner.claim_due():
+        user = {"name": r["username"], "source": r["source"], "role": r["role"]}
+        try:
+            if not can(user, "backup", r["database"]):
+                planner.finish(r["id"], "error", note="доступ к созданию копий этой базы уже отозван")
+                log_event("schedule_run", r["database"], "error", "отложенная копия №%d не запущена: доступ отозван" % r["id"], user=user)
+                continue
+            late = (planner.now() - planner.parse_time(r["run_at"])).total_seconds() > 120
+            hid, _ = enqueue("backup", r["database"], {"database": r["database"]},
+                             "отложенная копия №%d%s; в %s" % (r["id"], " (запущена с опозданием)" if late else "",
+                                                               mssql_ops.storage_label(config.load("storage"))),
+                             user=user, ip="планировщик")
+            planner.finish(r["id"], "queued", hid)
+        except Exception as e:
+            log.exception("Отложенная копия №%s", r.get("id"))
+            planner.finish(r["id"], "error", note=str(e))
+
+
+def _scheduler():
+    planner.recover()
+    while True:
+        try:
+            run_due_schedules()
+        except Exception:
+            log.exception("Сбой планировщика")
+        threading.Event().wait(10)
+
+
+threading.Thread(target=_scheduler, daemon=True, name="scheduler").start()
+
+
+# ---------- Файловый менеджер сервера SQL Server ----------
+@app.get("/files")
+def files_list():
+    """Содержимое папки на сервере SQL Server (его глазами). start=1 — начать с папки хранилища."""
+    path = request.args.get("path", "")
+    if request.args.get("start") == "1" and not path:
+        st = config.load("storage")
+        path = "" if st["type"] == "s3" else (st["smb_path"] if st["type"] == "smb" else st["local_path"])
+    if path and not mssql_ops.valid_fs_path(path):
+        return jsonify(error="Некорректный путь"), 400
+    try:
+        with mssql_ops.connect() as conn:
+            try:
+                return jsonify(mssql_ops.list_dir(conn, path, request.args.get("all") == "1"))
+            except Exception as e:
+                if request.args.get("start") == "1":          # папка хранилища недоступна — показываем корень
+                    res = mssql_ops.list_dir(conn, "", request.args.get("all") == "1")
+                    res["warning"] = mssql_ops.err_text(e)
+                    return jsonify(res)
+                raise
+    except Exception as e:
+        return jsonify(error=mssql_ops.err_text(e)), 502
+
+
+@app.get("/files/info")
+def files_info():
+    path = request.args.get("path", "")
+    if not mssql_ops.valid_fs_path(path):
+        return jsonify(error="Некорректный путь"), 400
+    try:
+        with mssql_ops.connect() as conn:
+            return jsonify(mssql_ops.file_header(conn, path))
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    except Exception as e:
+        return jsonify(error="Не удалось прочитать файл как резервную копию: " + mssql_ops.err_text(e)), 400
+
+
 def user_targets(user, conn):
     """Существующие базы, в которые этому пользователю можно восстанавливать.
     Полный доступ — любые несистемные; остальным — только отмеченные лично или через группы
@@ -488,13 +609,20 @@ def restore():
     target = str(data.get("target") or "").strip()
     new = bool(data.get("new"))
     user = actor()
-    if not target or not (path or src_db or copy_id is not None):
+    file = data.get("file")
+    file = file if isinstance(file, str) and file else None
+    if not target or not (path or file or src_db or copy_id is not None):
         return jsonify(error="Не указаны база для восстановления или целевая база"), 400
-    if path and user.get("role") != "full":
+    if (path or file) and user.get("role") != "full":
         return jsonify(error="Выбрать файл копии по пути может только администратор"), 403
+    if file and not mssql_ops.valid_fs_path(file):
+        return jsonify(error="Некорректный путь к файлу"), 400
     try:
         with mssql_ops.connect() as conn:
-            if path:
+            if file:
+                hdr = mssql_ops.file_header(conn, file)       # файл мог быть сделан не здесь — в журнале SQL Server его нет
+                found = {"path": file, "database": hdr["database"]}
+            elif path:
                 found = mssql_ops.find_backup(conn, path)
             elif copy_id is not None:
                 found = mssql_ops.find_backup_id(conn, copy_id)

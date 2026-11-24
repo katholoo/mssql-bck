@@ -27,6 +27,7 @@
   input[type=checkbox] { width:auto; padding:0; }
   input, select { width:100%; }
   select.inline { width:auto; flex:1; min-width:180px; }
+  input.inline { width:auto; flex:1; min-width:160px; }
   button { cursor:pointer; }
   button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
   button.danger { background:var(--err); color:#fff; border-color:var(--err); }
@@ -63,6 +64,9 @@
   #login input { margin-bottom:10px; }
   dialog#udlg, dialog#gdlg { max-width:860px; }
   dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--fg); max-width:520px; width:calc(100% - 32px); padding:20px; }
+  dialog#fdlg { max-width:820px; }
+  #f-list tr { cursor:pointer; } #f-list tr:hover td { background:var(--line); } #f-list tr.sel td { outline:1px solid var(--accent, #2563eb); }
+  #f-box { max-height:50vh; overflow:auto; }
   dialog::backdrop { background:rgba(0,0,0,.45); }
   dl { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0 0 14px; font-size:14px; }
   dt { color:var(--mut); } dd { margin:0; }
@@ -139,6 +143,21 @@
       </div>
       <div class="hint" id="make-info" hidden>Куда: <code id="dest">—</code> (меняется в «Настройки»). Копия создаётся как COPY_ONLY — цепочку разностных копий не нарушает.</div>
       <div id="make-res" class="res"></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+        <label for="sch-at">Отложить копию выбранной базы до даты и времени</label>
+        <div class="row">
+          <input type="datetime-local" id="sch-at" class="inline">
+          <button id="sch-go">Запланировать</button>
+        </div>
+        <div class="hint">Время — по часам вашего компьютера (<span id="sch-tz"></span>). В назначенный момент копия ставится в общую очередь от вашего имени, как при обычном запуске; если служба была выключена, копия запустится после её старта.</div>
+        <div id="sch-res" class="res"></div>
+        <div class="tbl" id="sch-box" hidden>
+          <table>
+            <thead><tr><th>Когда</th><th>База</th><th>Автор</th><th>Статус</th><th></th></tr></thead>
+            <tbody id="sch-list"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <div class="card" id="rs">
@@ -153,6 +172,11 @@
           <label style="margin-top:10px">Резервная копия</label>
           <select id="rs-copy"></select>
           <div class="hint" id="rs-src-hint"></div>
+          <div id="rs-file-box" hidden style="margin-top:10px">
+            <button type="button" id="rs-pick">📁 Выбрать файл на сервере…</button>
+            <button type="button" class="link" id="rs-file-clear" hidden>сбросить выбранный файл</button>
+            <div class="hint" id="rs-file-info" hidden></div>
+          </div>
         </div>
         <div>
           <label>Восстановить в</label>
@@ -260,7 +284,7 @@
           <option value="login">Вход</option><option value="login_failed">Неудачный вход</option><option value="logout">Выход</option>
           <option value="request_create">Запрос на создание базы</option><option value="request_approve">Запрос подтверждён</option>
           <option value="request_reject">Запрос отклонён</option><option value="request_cancel">Запрос отменён</option>
-          <option value="queue_cancel">Снятие с очереди</option><option value="user_added">Новый пользователь</option><option value="settings_access">Настройки доступа</option>
+          <option value="queue_cancel">Снятие с очереди</option><option value="schedule_add">Отложенная копия</option><option value="schedule_cancel">Отложенная копия отменена</option><option value="schedule_run">Запуск отложенной копии</option><option value="user_added">Новый пользователь</option><option value="settings_access">Настройки доступа</option>
           <option value="settings_ldap">Настройки LDAP</option><option value="settings_storage">Настройки хранилища</option>
           <option value="settings_test">Проверка настроек</option>
         </select>
@@ -528,6 +552,28 @@
 </main>
 
 <!-- Пользователь -->
+<dialog id="fdlg">
+  <h2>Файлы на сервере SQL Server</h2>
+  <div class="hint" style="margin-bottom:8px">Список читает сам SQL Server — от имени своей службы, поэтому видно только то, к чему у неё есть доступ. Выберите файл резервной копии (.bak).</div>
+  <div class="row">
+    <button type="button" id="f-up">⬆ Вверх</button>
+    <input id="f-path" class="inline" autocomplete="off" placeholder="Путь (пусто — корень)">
+    <button type="button" id="f-go">Перейти</button>
+  </div>
+  <label class="chk" style="margin:8px 0"><input type="checkbox" id="f-all"> Показывать все файлы, а не только .bak / .bkp</label>
+  <div id="f-box" class="tbl">
+    <table>
+      <thead><tr><th>Имя</th><th>Размер</th><th>Изменён</th></tr></thead>
+      <tbody id="f-list"></tbody>
+    </table>
+  </div>
+  <div id="f-empty" class="empty" hidden>Здесь нет папок и файлов копий</div>
+  <div id="f-res" class="res"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:8px">
+    <button type="button" id="f-cancel">Отмена</button><button type="button" id="f-ok" class="primary" disabled>Выбрать</button>
+  </div>
+</dialog>
+
 <dialog id="udlg">
   <h2 id="u-title">Пользователь</h2>
   <div class="cols3">
@@ -609,6 +655,7 @@ function applyMe() {
   $("nav-history").hidden = !can("settings");       // история всего сервера — только полный доступ
   $("nav-requests").hidden = !can("requests");
   $("make").hidden = !can("backup");
+  $("rs-file-box").hidden = !can("settings");     // выбор файла на сервере — только администратору
   $("rs-form").hidden = !can("restore");
   $("rs-denied").hidden = can("restore");
   $("rs-denied").textContent = `Восстановление недоступно для вашей роли «${me.role_label}». Его могут выполнять пользователи с ролью «Копии и восстановление» или «Полный доступ».`;
@@ -664,7 +711,7 @@ function show(name) {
   document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === name));
   for (const t of TABS) $("tab-" + t).hidden = t !== name;
   clearTimeout(qTimer);
-  if (name === "backups") { loadInfo(); loadDbs(); loadBackups(); loadRestore(); poll(); }
+  if (name === "backups") { loadInfo(); loadDbs(); loadBackups(); loadRestore(); loadSchedule(); poll(); }
   if (name === "queue") loadQueue();
   if (name === "requests") loadRequests();
   if (name === "history") loadHistory(true);
@@ -733,7 +780,7 @@ async function loadBackups(page) {
 $("b-size").onchange = () => { try { localStorage.setItem("bsize", $("b-size").value); } catch {} loadBackups(1); };
 $("b-pager").onclick = e => { const p = Number(e.target.dataset.p); if (p) loadBackups(p); };
 $("blist").onclick = e => { const i = e.target.dataset.i; if (i !== undefined) chooseCopy(backups[i]); };
-$("reload").onclick = () => { loadBackups(); loadDbs(); loadRestore(); };
+$("reload").onclick = () => { loadBackups(); loadDbs(); loadRestore(); loadSchedule(); };
 
 $("go").onclick = () => busy($("go"), async () => {
   const database = $("db").value;
@@ -744,11 +791,56 @@ $("go").onclick = () => busy($("go"), async () => {
   } catch (e) { say($("make-res"), e.message, "err"); }
 });
 
+/* ---------- отложенные копии ---------- */
+const pad2 = n => String(n).padStart(2, "0");
+const toLocalInput = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+function initSchedule() {
+  const now = new Date();
+  $("sch-tz").textContent = (Intl.DateTimeFormat().resolvedOptions().timeZone || "местное время");
+  $("sch-at").min = toLocalInput(now);
+  if (!$("sch-at").value) { const t = new Date(now.getTime() + 3600e3); t.setMinutes(0, 0, 0); $("sch-at").value = toLocalInput(t); }
+}
+const SCH_STATUS = { pending: ["queued", "ожидает"], error: ["error", "не запущена"], cancelled: ["cancelled", "отменена"] };
+async function loadSchedule() {
+  if (!can("backup")) return;
+  initSchedule();
+  try {
+    const j = await api("schedule");
+    $("sch-box").hidden = !j.items.length;
+    $("sch-list").innerHTML = j.items.map(i => {
+      const st = SCH_STATUS[i.status] || ["", i.status];
+      return `<tr><td class="nw">${esc(fmtLocal(i.run_at))}</td><td>${esc(i.database)}</td>
+        <td>${esc(i.username)}${i.mine ? ' <span class="hint">(вы)</span>' : ""}</td>
+        <td><span class="badge ${st[0]}">${st[1]}</span>${i.note ? ' <span class="hint">' + esc(i.note) + "</span>" : ""}</td>
+        <td class="nw">${i.can_cancel ? `<button class="link" data-sid="${i.id}">Отменить</button>` : ""}</td></tr>`;
+    }).join("");
+  } catch (e) { say($("sch-res"), e.message, "err"); }
+}
+$("sch-go").onclick = () => busy($("sch-go"), async () => {
+  const database = $("db").value, v = $("sch-at").value;
+  if (!database) return say($("sch-res"), "Выберите базу", "err");
+  if (!v) return say($("sch-res"), "Укажите дату и время", "err");
+  const when = new Date(v);                                   // datetime-local — это местное время браузера
+  try {
+    await api("schedule", { method: "POST", body: { database, run_at: when.toISOString() } });
+    say($("sch-res"), `Копия «${database}» запланирована на ${when.toLocaleString()}`, "ok");
+    loadSchedule();
+  } catch (e) { say($("sch-res"), e.message, "err"); }
+});
+$("sch-list").onclick = async e => {
+  const id = e.target.dataset.sid;
+  if (!id) return;
+  try { await api(`schedule/${id}/cancel`, { method: "POST" }); say($("sch-res"), "Отложенная копия отменена", "ok"); }
+  catch (err) { say($("sch-res"), err.message, "err"); }
+  loadSchedule();
+};
+
 const ACTION = { backup: "Копия", restore: "Восстановление", login: "Вход", login_failed: "Неудачный вход", logout: "Выход",
   settings_ldap: "Настройки LDAP", settings_storage: "Настройки хранилища", settings_notify: "Настройки уведомлений", settings_tls: "HTTPS-сертификат", notify: "Уведомление", settings_test: "Проверка настроек",
   request_create: "Запрос на создание базы", request_approve: "Запрос подтверждён", request_reject: "Запрос отклонён",
   request_cancel: "Запрос отменён", user_added: "Новый пользователь", settings_access: "Настройки доступа",
-  queue_cancel: "Задача снята с очереди" };
+  queue_cancel: "Задача снята с очереди", schedule_add: "Отложенная копия", schedule_cancel: "Отложенная копия отменена",
+  schedule_run: "Запуск отложенной копии" };
 const STATUS = { ok: "успешно", error: "ошибка", running: "выполняется", interrupted: "прервано",
   queued: "в очереди", cancelled: "отменено" };
 
@@ -861,6 +953,54 @@ $("qlist").onclick = async e => {
 };
 
 /* ---------- восстановление: форма «Добавить в очередь» ---------- */
+/* ---------- файловый менеджер сервера (выбор файла копии) ---------- */
+let rsFile = null, fPick = null, fWarn = "";
+const rsSrcDb = () => rsFile ? rsFile.database : $("rs-src").value;
+async function fLoad(path, start) {
+  say($("f-res"), "");
+  fPick = null; $("f-ok").disabled = true;
+  try {
+    const q = new URLSearchParams({ path: path || "", all: $("f-all").checked ? "1" : "0" });
+    if (start) q.set("start", "1");
+    const j = await api("files?" + q);
+    $("f-path").value = j.path;
+    $("f-path").dataset.parent = j.parent === null ? "" : "p";
+    $("f-up").dataset.to = j.parent === null ? "" : j.parent;
+    $("f-up").disabled = j.parent === null;
+    $("f-list").innerHTML = j.entries.map((x, i) => `<tr data-i="${i}"><td>${x.dir ? "📁" : "📄"} ${esc(x.name)}</td>
+      <td class="nw">${x.size != null && !x.dir ? fmtSize(x.size) : ""}</td><td class="nw">${esc(x.modified ? fmtLocal(x.modified) : "")}</td></tr>`).join("");
+    $("f-list").entries = j.entries;
+    $("f-empty").hidden = j.entries.length > 0;
+    if (j.truncated) say($("f-res"), "Показаны не все элементы — папка слишком большая, введите путь точнее.", "err");
+    if (j.warning) say($("f-res"), "Папка хранилища недоступна: " + j.warning, "err");
+  } catch (e) { say($("f-res"), e.message, "err"); }
+}
+$("rs-pick").onclick = () => { $("fdlg").showModal(); fLoad("", true); };
+$("f-cancel").onclick = () => $("fdlg").close();
+$("f-go").onclick = () => fLoad($("f-path").value.trim());
+$("f-path").onkeydown = e => { if (e.key === "Enter") fLoad($("f-path").value.trim()); };
+$("f-all").onchange = () => fLoad($("f-path").value.trim());
+$("f-up").onclick = () => fLoad($("f-up").dataset.to || "");
+$("f-list").onclick = e => {
+  const tr = e.target.closest("tr"); if (!tr) return;
+  const x = $("f-list").entries[Number(tr.dataset.i)];
+  if (x.dir) return fLoad(x.path);
+  document.querySelectorAll("#f-list tr.sel").forEach(r => r.classList.remove("sel"));
+  tr.classList.add("sel"); fPick = x; $("f-ok").disabled = false;
+};
+$("f-list").ondblclick = e => { if (fPick && e.target.closest("tr.sel")) $("f-ok").click(); };
+$("f-ok").onclick = () => busy($("f-ok"), async () => {
+  if (!fPick) return;
+  try {
+    const info = await api("files/info?path=" + encodeURIComponent(fPick.path));
+    rsFile = info;
+    $("rs-checksum").checked = info.checksum;      // у копии без контрольных сумм проверку выключаем сами
+    $("fdlg").close();
+    fillTargets(info.database); suggestName(); rsUpdate();
+  } catch (e) { say($("f-res"), e.message, "err"); }
+});
+$("rs-file-clear").onclick = () => { rsFile = null; $("rs-checksum").checked = true; fillTargets($("rs-src").value); suggestName(); rsUpdate(); };
+
 let rsources = [], rinfo = { databases: [], needs_approval: true, protected: [] }, rcopies = [], rsNameTouched = false;
 const rsIsNew = () => $("rs-target").value === "new";
 const rsDb = () => $("rs-target").value.slice(2);
@@ -875,7 +1015,7 @@ function fillTargets(preferred, keep) {
   else $("rs-target").value = rinfo.databases.includes(preferred) ? "d:" + preferred : "new";
 }
 function suggestName() {
-  if (!rsNameTouched) $("rs-newname").value = ($("rs-src").value || "db") + "_restored";
+  if (!rsNameTouched) $("rs-newname").value = (rsSrcDb() || "db") + "_restored";
 }
 async function loadRestore() {
   if (!can("restore")) return;
@@ -890,7 +1030,7 @@ async function loadRestore() {
   $("rs-src").innerHTML = rsources.map(x => `<option value="${esc(x.database)}">${esc(x.database)} — копия от ${esc(x.finished.replace("T", " "))}</option>`).join("")
     || '<option value="">Копий пока нет</option>';
   if (rsources.some(x => x.database === keepSrc)) $("rs-src").value = keepSrc;
-  fillTargets($("rs-src").value, keepTgt);
+  fillTargets(rsSrcDb(), keepTgt);
   suggestName();
   await loadCopies($("rs-src").value, $("rs-copy").value);
 }
@@ -919,7 +1059,11 @@ function rsUpdate() {
   $("rs-newbox").hidden = !isNew;
   $("rs-confirm-box").hidden = isNew;
   $("rs-kick-box").hidden = isNew;
-  $("rs-src-hint").textContent = $("rs-copy").value
+  $("rs-src").disabled = $("rs-copy").disabled = !!rsFile;
+  $("rs-file-clear").hidden = $("rs-file-info").hidden = !rsFile;
+  if (rsFile) $("rs-file-info").textContent = `Файл: ${rsFile.path} — база «${rsFile.database}», копия от ${rsFile.finished.replace("T", " ")}, ${fmtSize(rsFile.size)}`
+    + (rsFile.checksum ? "." : ". В копии нет контрольных сумм — проверка CHECKSUM выключена.");
+  $("rs-src-hint").textContent = rsFile ? "Будет восстановлен выбранный файл." : $("rs-copy").value
     ? "Будет восстановлена выбранная копия."
     : "Будет восстановлена последняя копия этой базы.";
   // Что разрешено именно этому пользователю (настраивается в «Настройки → Пользователи / Группы / Защита баз»)
@@ -937,9 +1081,9 @@ function rsUpdate() {
       note = "Вам не назначены базы для перезаписи (их задаёт администратор в «Настройки → Пользователи / Группы»). " + note;
   } else {
     $("rs-confirm-name").textContent = rsDb();
-    note = rsDb() === $("rs-src").value
+    note = rsDb() === rsSrcDb()
       ? "Существующая база будет ПЕРЕЗАПИСАНА данными из копии."
-      : `База «${rsDb()}» будет ПЕРЕЗАПИСАНА данными из копии базы «${$("rs-src").value}». Число файлов данных и журнала должно совпадать.`;
+      : `База «${rsDb()}» будет ПЕРЕЗАПИСАНА данными из копии базы «${rsSrcDb()}». Число файлов данных и журнала должно совпадать.`;
     if (prot) note += " База защищена: перезапись выполнится только после подтверждения администратором — будет отправлен запрос.";
     cls = "hint warn";
   }
@@ -948,7 +1092,7 @@ function rsUpdate() {
   const asRequest = (isNew && rinfo.needs_approval) || prot;
   $("rs-go").textContent = asRequest ? "Отправить запрос" : "Добавить в очередь";
   $("rs-go").className = isNew || prot ? "primary" : "danger";
-  $("rs-go").disabled = !$("rs-src").value || (isNew ? !$("rs-newname").value.trim() : $("rs-confirm").value !== rsDb());
+  $("rs-go").disabled = !rsSrcDb() || (isNew ? !$("rs-newname").value.trim() : $("rs-confirm").value !== rsDb());
 }
 $("rs-src").onchange = () => { fillTargets($("rs-src").value); suggestName(); loadCopies($("rs-src").value); };
 $("rs-copy").onchange = rsUpdate;
@@ -956,9 +1100,10 @@ $("rs-target").onchange = $("rs-confirm").oninput = rsUpdate;
 $("rs-newname").oninput = () => { rsNameTouched = true; rsUpdate(); };
 $("rs-go").onclick = () => busy($("rs-go"), async () => {
   const isNew = rsIsNew();
-  const body = { database: $("rs-src").value, target: isNew ? $("rs-newname").value.trim() : rsDb(), new: isNew,
+  const body = { database: rsSrcDb(), target: isNew ? $("rs-newname").value.trim() : rsDb(), new: isNew,
     confirm: $("rs-confirm").value, kick_users: $("rs-kick").checked, checksum: $("rs-checksum").checked };
-  if ($("rs-copy").value) body.copy = Number($("rs-copy").value);
+  if (rsFile) body.file = rsFile.path;
+  else if ($("rs-copy").value) body.copy = Number($("rs-copy").value);
   try {
     const r = await api("restore", { method: "POST", body });
     if (r.request) { show("requests"); say($("rq-res"), `Запрос №${r.request} отправлен на подтверждение`, "ok"); }

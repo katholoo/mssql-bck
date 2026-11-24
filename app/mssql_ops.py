@@ -302,6 +302,118 @@ def run_restore(st, path, source_db, target, kick_users=False, create=False, che
         return "%s -> %s (новая база)" % (path, target)
 
 
+# ---------- обзор файлов на сервере SQL Server (от имени службы SQL Server) ----------
+BACKUP_EXT = (".bak", ".bkp")
+MAX_ENTRIES = 3000
+
+
+def is_windows_path(p):
+    return bool(re.match(r"^[A-Za-z]:", p)) or p.startswith("\\\\") or "\\" in p
+
+
+def path_sep(p):
+    return "\\" if is_windows_path(p) else "/"
+
+
+def path_join(base, name):
+    sep = path_sep(base)
+    return base.rstrip("/\\") + sep + name if not re.match(r"^[A-Za-z]:\\?$", base) else base.rstrip("\\") + "\\" + name
+
+
+def path_parent(p):
+    """Родительская папка; None — выше подниматься некуда (корень диска, шары или файловой системы)."""
+    p = p.rstrip("/\\") if len(p) > 3 else p
+    if is_windows_path(p):
+        if re.match(r"^[A-Za-z]:\\?$", p):
+            return None
+        m = re.match(r"^(\\\\[^\\]+\\[^\\]+)\\?$", p)
+        if m:
+            return None
+        i = p.rfind("\\")
+        if i <= 2 and re.match(r"^[A-Za-z]:", p):
+            return p[:2] + "\\"
+        return p[:i] if i > 0 else None
+    if p in ("", "/"):
+        return None
+    i = p.rfind("/")
+    return "/" if i <= 0 else p[:i]
+
+
+def valid_fs_path(p):
+    return isinstance(p, str) and 0 < len(p) <= 520 and not any(ord(c) < 32 for c in p)
+
+
+def _host_is_windows(cur):
+    try:
+        cur.execute("SELECT host_platform FROM sys.dm_os_host_info")
+        row = cur.fetchone()
+        return not row or str(row[0]).lower() == "windows"
+    except Exception:
+        return True
+
+
+def list_dir(conn, path, all_files=False):
+    """Содержимое папки на сервере SQL Server. Читает сам SQL Server (учётная запись его службы), поэтому видны только
+    те папки и файлы, к которым у неё есть доступ. path == '' -> корень (диски Windows или «/»).
+    Возвращает {"path", "parent", "entries": [{name, path, dir, size, modified}], "truncated"}."""
+    cur = conn.cursor()
+    if not path:
+        if _host_is_windows(cur):
+            cur.execute("EXEC master.sys.xp_fixeddrives")
+            drives = sorted(str(r[0]).upper() + ":\\" for r in cur.fetchall())
+            return {"path": "", "parent": None, "truncated": False,
+                    "entries": [{"name": d, "path": d, "dir": True, "size": None, "modified": None} for d in drives]}
+        path = "/"
+    entries, truncated = [], False
+    try:
+        cur.execute("SELECT file_or_directory_name, is_directory, size_in_bytes, last_write_time "
+                    "FROM sys.dm_os_enumerate_filesystem(%s, N'*') ORDER BY is_directory DESC, file_or_directory_name"
+                    % qlit(path))
+        rows = [(r[0], bool(r[1]), r[2], r[3]) for r in cur.fetchall()]
+    except Exception as e:
+        # SQL Server до 2017 (или нет права): запасной способ — xp_dirtree (без размеров и дат)
+        if "Invalid object name" not in err_text(e) and "Could not find" not in err_text(e) \
+                and "dm_os_enumerate_filesystem" not in err_text(e):
+            raise
+        cur.execute("EXEC master.sys.xp_dirtree %s, 1, 1" % qlit(path))
+        rows = sorted(((r[0], not r[2], None, None) for r in cur.fetchall()), key=lambda x: (not x[1], x[0].lower()))
+    for name, is_dir, size, modified in rows:
+        if not name or name in (".", ".."):
+            continue
+        if not is_dir and not all_files and not name.lower().endswith(BACKUP_EXT):
+            continue
+        if len(entries) >= MAX_ENTRIES:
+            truncated = True
+            break
+        entries.append({"name": name, "path": path_join(path, name), "dir": is_dir,
+                        "size": int(size) if size is not None else None,
+                        "modified": modified.strftime("%Y-%m-%dT%H:%M:%S") if hasattr(modified, "strftime") else None})
+    parent = path_parent(path)
+    if parent is None and re.match(r"^[A-Za-z]:", path):
+        parent = ""                                   # выше диска — список дисков
+    return {"path": path, "parent": parent,
+            "entries": entries, "truncated": truncated}
+
+
+def file_header(conn, path):
+    """Сведения о файле копии (RESTORE HEADERONLY): база, дата, размер, есть ли контрольные суммы.
+    Допускаются только полные копии (первый набор в файле, как при RESTORE без FILE=)."""
+    cur = conn.cursor()
+    cur.execute("RESTORE HEADERONLY FROM DISK = %s" % qlit(path))
+    names = [d[0] for d in (cur.description or [])]
+    rows = cur.fetchall()
+    if not rows:
+        raise ValueError("В файле нет резервных наборов")
+    row = dict(zip(names, rows[0]))
+    if int(row.get("BackupType", 0)) != 1:
+        raise ValueError("Это не полная копия базы (поддерживается только полная копия)")
+    done = row.get("BackupFinishDate")
+    return {"database": row["DatabaseName"], "path": path,
+            "finished": done.strftime("%Y-%m-%dT%H:%M:%S") if hasattr(done, "strftime") else str(done or ""),
+            "size": int(row.get("CompressedBackupSize") or row.get("BackupSize") or 0),
+            "checksum": bool(row.get("HasBackupChecksums")), "sets": len(rows)}
+
+
 def test_storage(st):
     """Пишет небольшую копию системной базы model в выбранное хранилище."""
     kind, path = build_target(st, "model", filename=TEST_FILE)

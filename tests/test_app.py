@@ -111,6 +111,7 @@ class Fake:
 class FakeCursor:
     def __init__(self):
         self.rows = []
+        self.description = None
 
     def execute(self, sql):
         Fake.sqls.append(sql)
@@ -141,6 +142,18 @@ class FakeCursor:
                 self.rows = rows[:int(t.group(1))] if t else rows
         elif "SERVERPROPERTY" in sql:
             self.rows = [("/var/opt/mssql/data/", "/var/opt/mssql/log/")]
+        elif "dm_os_host_info" in sql:
+            self.rows = [("Linux",)]
+        elif "dm_os_enumerate_filesystem" in sql:
+            self.rows = [("old", 1, 0, None), ("sales_a.bak", 0, 2048, datetime.datetime(2026, 11, 1, 3, 0)),
+                         ("notes.txt", 0, 10, None), ("sales_b.bkp", 0, 4096, None)]
+            self.description = None
+        elif "RESTORE HEADERONLY" in sql:
+            if "notbackup" in sql:
+                raise Exception("The file is not a backup")
+            self.rows = [("shop", 1, datetime.datetime(2026, 11, 2, 4, 0), 5000, 1500, int("nochk" not in sql))]
+            self.description = [("DatabaseName",), ("BackupType",), ("BackupFinishDate",), ("BackupSize",),
+                                ("CompressedBackupSize",), ("HasBackupChecksums",)]
         elif "RESTORE FILELISTONLY" in sql:
             self.rows = [("sales", "/var/opt/mssql/data/sales.mdf", "D"),
                          ("sales_log", "/var/opt/mssql/data/sales_log.ldf", "L")]
@@ -815,6 +828,94 @@ class Tests(unittest.TestCase):
         r = a.post("/restore", json={"path": path, "target": "sales", "confirm": "sales"}, headers=H)  # по умолчанию включено
         self.assertEqual(wait_job(a, r.get_json()["id"])["status"], "ok")
         self.assertIn("RECOVERY, CHECKSUM", "\n".join(Fake.sqls))
+
+    def test_20c_file_browser_and_restore_from_file(self):
+        a = admin()
+        r = a.get("/files?path=/mnt/backups").get_json()
+        names = [e["name"] for e in r["entries"]]
+        self.assertEqual(names, ["old", "sales_a.bak", "sales_b.bkp"])          # .txt скрыт
+        self.assertEqual(r["entries"][0]["path"], "/mnt/backups/old")
+        self.assertEqual(r["parent"], "/mnt")
+        self.assertEqual(len(a.get("/files?path=/mnt/backups&all=1").get_json()["entries"]), 4)
+        self.assertEqual(a.get("/files?path=/mnt/backups/\x01").status_code, 400)
+        info = a.get("/files/info?path=/mnt/backups/sales_a.bak").get_json()
+        self.assertEqual((info["database"], info["checksum"]), ("shop", True))
+        self.assertFalse(a.get("/files/info?path=/mnt/backups/nochk.bak").get_json()["checksum"])
+        self.assertEqual(a.get("/files/info?path=/mnt/backups/notbackup.bak").status_code, 400)
+        # восстановление прямо из выбранного файла (в журнале SQL Server его нет)
+        Fake.sqls.clear()
+        r = a.post("/restore", json={"file": "/mnt/backups/sales_a.bak", "target": "sales", "confirm": "sales",
+                                     "checksum": False}, headers=H)
+        self.assertEqual(r.status_code, 202, r.get_json())
+        self.assertEqual(wait_job(a, r.get_json()["id"])["status"], "ok")
+        self.assertIn("FROM DISK = N'/mnt/backups/sales_a.bak'", last_sql("RESTORE DATABASE"))
+        # не-администратору обзор файлов и выбор файла недоступны
+        reset_access()
+        ldap_on()
+        c, r = login("bob", "bobpw")
+        self.assertEqual(c.get("/files").status_code, 403)
+        self.assertEqual(c.get("/files/info?path=/x.bak").status_code, 403)
+        r = c.post("/restore", json={"file": "/mnt/backups/sales_a.bak", "target": "sales", "confirm": "sales"}, headers=H)
+        self.assertEqual(r.status_code, 403)
+
+    def test_20d_schedule(self):
+        a = admin()
+        soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        past = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual(a.post("/schedule", json={"database": "sales", "run_at": past}, headers=H).status_code, 400)
+        self.assertEqual(a.post("/schedule", json={"database": "sales", "run_at": "2026-12-01T10:00"}, headers=H).status_code, 400)  # без пояса
+        self.assertEqual(a.post("/schedule", json={"database": "sales", "run_at": "bad"}, headers=H).status_code, 400)
+        self.assertEqual(a.post("/schedule", json={"run_at": soon}, headers=H).status_code, 400)
+        r = a.post("/schedule", json={"database": "sales", "run_at": soon}, headers=H)
+        self.assertEqual(r.status_code, 201, r.get_json())
+        sid = r.get_json()["id"]
+        items = a.get("/schedule").get_json()["items"]
+        self.assertTrue(any(i["id"] == sid and i["status"] == "pending" and i["can_cancel"] for i in items))
+        # время ещё не пришло — в очередь не попадает
+        webapp.run_due_schedules()
+        self.assertTrue(any(i["id"] == sid and i["status"] == "pending" for i in a.get("/schedule").get_json()["items"]))
+        # отмена
+        self.assertEqual(a.post("/schedule/%d/cancel" % sid, headers=H).status_code, 200)
+        self.assertEqual(a.post("/schedule/%d/cancel" % sid, headers=H).status_code, 409)
+        # время наступило: ставится задача копирования от имени автора
+        import planner
+        r = a.post("/schedule", json={"database": "sales", "run_at": soon}, headers=H)
+        sid = r.get_json()["id"]
+        with history.lock:
+            planner._db().execute("UPDATE scheduled SET run_at=? WHERE id=?", (past, sid))
+            planner._db().commit()
+        Fake.sqls.clear()
+        webapp.run_due_schedules()
+        row = planner.get(sid)
+        self.assertEqual(row["status"], "queued")
+        self.assertEqual(wait_job(a, row["job_id"])["status"], "ok")
+        self.assertIn("BACKUP DATABASE [sales]", last_sql("BACKUP"))
+        webapp.run_due_schedules()                       # повторно не запускается
+        self.assertEqual(len([s for s in Fake.sqls if s.startswith("BACKUP")]), 1)
+
+    def test_20e_schedule_permissions(self):
+        reset_access()
+        ldap_on()
+        soon = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        v, _ = login("alice", "alicepw")                                    # просмотр
+        self.assertEqual(v.get("/schedule").status_code, 403)
+        self.assertEqual(v.post("/schedule", json={"database": "sales", "run_at": soon}, headers=H).status_code, 403)
+        access.set_user("bob", [], [], backup_dbs=["sales"])
+        b, _ = login("bob", "bobpw")
+        self.assertEqual(b.post("/schedule", json={"database": "sales2", "run_at": soon}, headers=H).status_code, 403)  # не его база
+        sid = b.post("/schedule", json={"database": "sales", "run_at": soon}, headers=H).get_json()["id"]
+        e, _ = login("erin", "erinpw")
+        self.assertFalse(any(i["id"] == sid for i in e.get("/schedule").get_json()["items"]))     # чужие не видны
+        self.assertEqual(e.post("/schedule/%d/cancel" % sid, headers=H).status_code, 403)
+        self.assertTrue(any(i["id"] == sid for i in admin().get("/schedule").get_json()["items"]))  # админ видит все
+        # доступ отозван до запуска — копия не стартует
+        import planner
+        access.set_user("bob", [], [], backup_dbs=[])
+        with history.lock:
+            planner._db().execute("UPDATE scheduled SET run_at='2020-01-01T00:00:00Z' WHERE id=?", (sid,))
+            planner._db().commit()
+        webapp.run_due_schedules()
+        self.assertEqual(planner.get(sid)["status"], "error")
 
     def test_20_restore(self):
         a = admin()

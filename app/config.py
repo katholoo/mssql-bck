@@ -286,5 +286,5 @@ def check_telegram(cfg):
 def check_bitrix(cfg):
     if not re.match(r"^https?://[^\s/]+/rest/\d+/[A-Za-z0-9]+/?$", cfg["bitrix_url"]):
         raise ValueError("Адрес вебхука Bitrix24 должен иметь вид https://портал.bitrix24.ru/rest/1/код/")
-    if not re.match(r"^(\d+|chat\d+)$", cfg["bitrix_dialog"]):
-        raise ValueError("Получатель Bitrix24: id пользователя или chatN (номер группового чата)")
+    if not re.match(r"^(\d+|chat\d+|sg\d+)$", cfg["bitrix_dialog"]):
+        raise ValueError("Получатель Bitrix24: id пользователя, chatN (чат) или sgN (чат рабочей группы/проекта)")
